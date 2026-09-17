@@ -1,0 +1,5 @@
+aiohttp>=3.9
+# 以下は任意（入れた分だけ対戦相手が増える）
+anthropic>=0.40
+openai>=1.50
+claude-agent-sdk

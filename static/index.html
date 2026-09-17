@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev Game Benchmark — Jev vs LLM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+:root {
+  --bg: #090d16; --panel: #111827; --panel-2: #172033; --line: #26324a; --ink: #e6ebf5; --dim: #8b97b0;
+  --jev: #3cc9b2; --jev-bg: #0f2f2b; --claude: #f0955a; --claude-bg: #35200f; --gpt: #a78bfa; --gpt-bg: #261f45; --jev2: #6ea8fe; --jev2-bg: #14264a; --llm: var(--claude); --llm-bg: var(--claude-bg); --bad: #ff7b6b; --ok: #7fd88a;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace; --disp: "Chakra Petch", "Zen Kaku Gothic New", sans-serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; }
+button, select { font: inherit; }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 20px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); z-index: 5; }
+.brand { font-family: var(--disp); font-weight: 700; font-size: 1.25rem; letter-spacing: .04em; }
+.brand b:first-of-type { color: var(--jev); } .brand b:last-of-type { color: var(--llm); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin-left: auto; }
+.controls label { display: grid; gap: 2px; font-size: .68rem; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; font-family: var(--mono); }
+select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: .85rem; }
+.btn { border: 1px solid var(--ink); background: var(--ink); color: var(--bg); font-weight: 700; border-radius: 6px; padding: 7px 18px; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn:disabled { opacity: .4; cursor: default; }
+:focus-visible { outline: 2px solid var(--jev); outline-offset: 2px; }
+.statusbar { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center; padding: 8px 20px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: .8rem; color: var(--dim); }
+.statusbar b { color: var(--ink); font-weight: 600; }
+#phase { color: var(--ink); }
+#lastEvent { margin-left: auto; color: var(--ink); max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arena { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 16px; padding: 16px 20px; max-width: 1680px; margin-inline: auto; }
+.side { --tone: var(--jev); --tone-bg: var(--jev-bg); background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--tone); border-radius: 12px; padding: 16px; display: grid; gap: 14px; min-width: 0; }
+.side.llm { --tone: var(--llm); --tone-bg: var(--llm-bg); }
+.side.lost { opacity: .72; }
+.side-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.side-head h2 { margin: 0; font-family: var(--disp); font-size: 1.6rem; color: var(--tone); letter-spacing: .03em; }
+.tag { font-family: var(--mono); font-size: .72rem; color: var(--dim); border: 1px solid var(--line); border-radius: 99px; padding: 1px 9px; }
+.how { font-size: .78rem; color: var(--dim); flex-basis: 100%; }
+.badge { margin-left: auto; font-family: var(--disp); font-weight: 700; font-size: 1rem; padding: 1px 12px; border-radius: 4px; }
+.badge.win { background: var(--tone); color: var(--bg); } .badge.lose { border: 1px solid var(--line); color: var(--dim); }
+.play { display: grid; grid-template-columns: 14px auto minmax(0, 1fr); gap: 12px; align-items: start; }
+.gmeter { width: 14px; height: 100%; min-height: 200px; background: var(--panel-2); border-radius: 3px; position: relative; overflow: hidden; }
+.gmeter i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bad); height: 0; transition: height .15s; }
+canvas.board { display: block; background: #060910; border: 1px solid var(--line); border-radius: 4px; width: min(280px, 42vw); height: auto; aspect-ratio: 6 / 13; }
+body[data-game="blocks"] canvas.board { aspect-ratio: 1 / 2; }
+.rightcol { display: grid; gap: 12px; min-width: 0; align-content: start; }
+@media (max-width: 640px) { .play { grid-template-columns: 14px auto; } .rightcol { grid-column: 1 / -1; } }
+.ms { background: var(--tone-bg); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px; }
+.ms small { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; color: var(--dim); text-transform: uppercase; }
+.ms .big { font-family: var(--disp); font-weight: 700; font-size: clamp(2rem, 5vw, 3rem); line-height: 1; color: var(--tone); font-variant-numeric: tabular-nums; }
+.ms .big span { font-size: .4em; margin-left: 4px; color: var(--dim); }
+.ms.thinking .big { color: var(--ink); }
+.ms .row { display: flex; flex-wrap: wrap; gap: 2px 12px; font-family: var(--mono); font-size: .74rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ms .row b { color: var(--ink); font-weight: 500; }
+canvas.spark { width: 100%; height: 44px; display: block; }
+.next { display: flex; gap: 6px; align-items: center; font-family: var(--mono); font-size: .66rem; color: var(--dim); letter-spacing: .08em; }
+.next canvas { width: 22px; height: 44px; }
+body[data-game="blocks"] .next canvas { width: 40px; height: 28px; }
+.strat { color: var(--tone); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.stat { padding: 7px 10px; display: grid; gap: 1px; box-shadow: 0 0 0 .5px var(--line); }
+.stat small { font-size: .66rem; color: var(--dim); }
+.stat b { font-family: var(--mono); font-weight: 500; font-size: .95rem; font-variant-numeric: tabular-nums; }
+.stat b.warn { color: var(--bad); }
+.logwrap { display: grid; gap: 6px; min-width: 0; }
+.logwrap h3 { margin: 0; font-size: .7rem; font-family: var(--mono); letter-spacing: .08em; color: var(--dim); text-transform: uppercase; font-weight: 500; }
+.log { height: 300px; overflow-y: auto; background: #060910; border: 1px solid var(--line); border-radius: 6px; font-family: var(--mono); font-size: .72rem; line-height: 1.5; padding: 4px 0; }
+.log .ln { padding: 2px 10px; cursor: pointer; border-left: 2px solid transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log .ln:hover, .log .ln.sel { background: var(--panel-2); border-left-color: var(--tone); }
+.log .ln .n { color: var(--dim); } .log .ln .ms2 { color: var(--tone); font-weight: 600; } .log .ln .tok { color: var(--dim); }
+.log .ln.bad { color: var(--bad); } .log .ln .out { color: var(--ink); }
+.bottom { max-width: 1680px; margin-inline: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; padding: 0 20px 28px; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.box h3 { margin: 0; font-size: .7rem; font-family: var(--mono); letter-spacing: .08em; color: var(--dim); text-transform: uppercase; font-weight: 500; }
+pre { margin: 0; font-family: var(--mono); font-size: .72rem; line-height: 1.5; max-height: 360px; overflow: auto; background: #060910; border: 1px solid var(--line); border-radius: 6px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#events { height: 150px; overflow-y: auto; font-family: var(--mono); font-size: .74rem; color: var(--dim); display: grid; gap: 2px; align-content: start; }
+#events b { color: var(--ink); font-weight: 500; }
+#result { font-size: .95rem; } #result b { font-family: var(--disp); font-size: 1.3rem; }
+.note { font-size: .76rem; color: var(--dim); line-height: 1.7; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span id="brand-game">BLOBS</span> ARENA — <b>JEV</b> vs <b id="brand-llm">CLAUDE</b></div>
+  <div class="controls">
+    <label for="game">ゲーム<select id="game"></select></label>
+    <label for="strategy">戦略（左の Jev）<select id="strategy"></select></label>
+    <label for="strategy_right" id="sr-wrap" hidden>戦略（右の Jev）<select id="strategy_right"></select></label>
+    <label for="provider">対戦相手<select id="provider"></select></label>
+    <label for="model">モデル<select id="model"></select></label>
+    <label for="thinking">思考<select id="thinking"><option value="off">off（最速）</option><option value="adaptive-low">低（low）</option><option value="adaptive">標準（adaptive / medium）</option></select></label>
+    <label for="gravity">開始時の落下速度<select id="gravity"><option value="1000">1000 ms/段</option><option value="800" selected>800 ms/段</option><option value="500">500 ms/段</option><option value="300">300 ms/段</option><option value="150">150 ms/段</option></select></label>
+    <label for="rate" id="rate-wrap">おじゃまレート<select id="rate"><option value="70" selected>70点で1個（標準）</option><option value="140">140点で1個（長く続く）</option><option value="280">280点で1個（さらに長く）</option></select></label>
+    <label for="duration">試合時間<select id="duration"><option value="60">1分</option><option value="180" selected>3分</option><option value="300">5分</option><option value="2700">決着がつくまで（上限45分）</option></select></label>
+    <button class="btn" id="start" type="button">対戦開始</button>
+    <button class="btn ghost" id="stop" type="button" disabled>停止</button>
+  </div>
+</header>
+<div class="statusbar">
+  <span id="phase">未接続</span>
+  <span>経過 <b id="elapsed">0.0</b> / <span id="dur">180</span> 秒</span>
+  <span>落下 <b id="grav">—</b> ms/段</span>
+  <span id="rate-status">おじゃま <b id="ratev">70</b> 点/個</span>
+  <span id="costcmp"></span>
+  <span id="lastEvent"></span>
+</div>
+
+<main class="arena">
+  <section class="side jev" id="side-jev"></section>
+  <section class="side llm" id="side-llm"></section>
+</main>
+
+<div class="bottom">
+  <div class="box">
+    <h3>選択した回答の全文（ログの行をクリック）</h3>
+    <pre id="inspect">ログの行をクリックすると、そのときのリクエストとレスポンスの全文を表示します。</pre>
+  </div>
+  <div class="box">
+    <h3>試合の出来事</h3>
+    <div id="events"></div>
+    <div id="result"></div>
+    <p class="note"><b>ゲームロジック</b>（置ける場所の列挙、結果のシミュレーション、勝敗）と<b>戦略</b>（モデルに見せる特徴量、評価基準の文言、同点の扱い）は分かれています。戦略は <code>strategies/&lt;ゲーム&gt;/&lt;名前&gt;.py</code> の1ファイルで、試合を始めるたびに読み込み直します。LLM（Claude / GPT）と対戦するときは、両者に<b>同じ戦略</b>（同じ特徴量・同じ基準）を渡します。対戦相手を「Jev — 戦略どうしの対戦」にすると、左右で別の戦略を戦わせられます。考えている間もピースは落ち続け、回答が届いた瞬間にその位置へ移して落とします。着地までに間に合わなければ、出現位置のまま固定されます。回答時間は両者ともサーバー側で計った実時間（ネットワーク往復込み）です。全リクエストとレスポンスは <code>logs/*.jsonl</code> に保存されます。<br><b>費用の出し方:</b> Jev は公式価格（入力 $0.042 / 100万トークン、出力は無料。typesafe.ai 記載）× 実際の使用トークン。Claude と GPT は、API 直結なら定価 × 実際の使用トークン（実際に請求される額。GPT はキャッシュ入力の割引も反映）、Claude の Agent SDK（サブスク）なら請求はなく SDK が返す <b>API 換算額</b>を表示しています。</p>
+  </div>
+</div>
+
+<script>
+"use strict";
+const COLORS = { R: "#f0566a", G: "#5fd675", B: "#5b9bf5", Y: "#f2cf4b", O: "#8a93a8" };
+const TCOLORS = { I: "#4fd6e8", O: "#f2d24b", T: "#b07cf0", S: "#6fd672", Z: "#f06a6a", L: "#f2a04b", J: "#5b8df0", G: "#56607a" };
+const TSHAPES = { I: [[0,0],[1,0],[2,0],[3,0]], O: [[0,0],[1,0],[0,1],[1,1]], T: [[0,0],[1,0],[2,0],[1,1]], S: [[1,0],[2,0],[0,1],[1,1]], Z: [[0,0],[1,0],[1,1],[2,1]], L: [[0,0],[0,1],[0,2],[1,2]], J: [[1,0],[1,1],[1,2],[0,2]] };
+const BW = 6, BH = 13;
+const SIDES = { jev: { title: "JEV", how: "戦略ファイルの問い（既定: 候補ごとに Score 1問）を1リクエストで送り、最高点を採用" }, llm: { title: "CLAUDE", how: "同じ特徴量・同じ評価基準を渡し {\"pick\":\"pNN\"} を返させる" } };
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
+const usd = (v) => (v == null ? "—" : "$" + (v >= 0.01 ? v.toFixed(4) : v >= 0.0001 ? v.toFixed(5) : v.toFixed(7)));
+const decisions = {};   // key → 全文
+let latest = null, selKey = null;
+
+for (const side of Object.keys(SIDES)) {
+  $("side-" + side).innerHTML = `
+    <div class="side-head"><h2 id="${side}-title">${SIDES[side].title}</h2><span class="tag" id="${side}-model">—</span><span class="tag strat" id="${side}-strat">戦略: —</span><span class="badge" id="${side}-badge" hidden></span><span class="how" id="${side}-how">${SIDES[side].how}</span></div>
+    <div class="play">
+      <div class="gmeter" title="予告されているおじゃまブロブ"><i id="${side}-g"></i></div>
+      <canvas class="board" id="${side}-board" width="300" height="650" aria-label="${SIDES[side].title} の盤面"></canvas>
+      <div class="rightcol">
+        <div class="ms" id="${side}-msbox"><small id="${side}-mslabel">直近の回答時間</small><div class="big"><span id="${side}-ms" style="font-size:1em;color:inherit;margin:0">—</span><span>ms</span></div>
+          <div class="row"><span>平均 <b id="${side}-avg">—</b></span><span>中央値 <b id="${side}-p50">—</b></span><span>最大 <b id="${side}-max">—</b></span></div></div>
+        <canvas class="spark" id="${side}-spark" width="300" height="44" aria-label="回答時間の推移"></canvas>
+        <div class="next">NEXT <canvas id="${side}-n0" width="44" height="88"></canvas><canvas id="${side}-n1" width="44" height="88"></canvas><canvas id="${side}-n2" width="44" height="88"></canvas></div>
+        <div class="logwrap"><h3>回答ログ — どんな出力で操作したか（常時）</h3><div class="log" id="${side}-log" tabindex="0"></div></div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><small>入力トークン 累計</small><b id="${side}-tin">0</b></div>
+      <div class="stat"><small>出力トークン 累計</small><b id="${side}-tout">0</b></div>
+      <div class="stat"><small>トークン / 1手</small><b id="${side}-tpm">—</b></div>
+      <div class="stat"><small id="${side}-costlabel">${side === "llm" ? "費用 累計" : "費用 累計（公式単価）"}</small><b id="${side}-cost">—</b></div>
+      <div class="stat"><small>費用 / 1手</small><b id="${side}-cpm">—</b></div>
+      <div class="stat"><small id="${side}-cpl-label">費用 / 攻撃1単位</small><b id="${side}-cpl">—</b></div>
+      <div class="stat"><small>置いた数 / 毎分</small><b id="${side}-pieces">0</b></div>
+      <div class="stat" data-tile="0"><small></small><b></b></div>
+      <div class="stat" data-tile="1"><small></small><b></b></div>
+      <div class="stat" data-tile="2"><small></small><b></b></div>
+      <div class="stat"><small>間に合わず</small><b id="${side}-nit">0</b></div>
+      <div class="stat"><small>届いたが置けず</small><b id="${side}-inf">0</b></div>
+      <div class="stat"><small>形式逸脱 / 無効 / エラー</small><b id="${side}-fmt">0 / 0 / 0</b></div>
+    </div>
+`;
+}
+
+function drawBlob(g, x, y, s, ch, a, links) {
+  const cx = x * s + s / 2, cy = y * s + s / 2, r = s * .44;
+  g.globalAlpha = a; g.fillStyle = COLORS[ch];
+  if (links) links.forEach(([dx, dy]) => g.fillRect(cx + (dx ? (dx > 0 ? 0 : -s / 2) : -r * .62), cy + (dy ? (dy > 0 ? 0 : -s / 2) : -r * .62), dx ? s / 2 : r * 1.24, dy ? s / 2 : r * 1.24));
+  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+  g.globalAlpha = a * .3; g.fillStyle = "#fff"; g.beginPath(); g.arc(cx - r * .3, cy - r * .35, r * .3, 0, Math.PI * 2); g.fill();
+  g.globalAlpha = a;
+  if (ch === "O") { g.strokeStyle = "#565f75"; g.lineWidth = s * .06; g.beginPath(); g.arc(cx, cy, r * .55, 0, Math.PI * 2); g.stroke(); }
+  else { g.fillStyle = "#0b1020"; for (const ex of [-.18, .18]) { g.beginPath(); g.arc(cx + ex * s, cy + s * .04, s * .055, 0, Math.PI * 2); g.fill(); } }
+  g.globalAlpha = 1;
+}
+function drawBoard(side, p) {
+  const c = $(side + "-board"), g = c.getContext("2d"), s = c.width / BW;
+  g.clearRect(0, 0, c.width, c.height);
+  g.fillStyle = "#0d1322"; g.fillRect(0, 0, c.width, s);               // 隠し段
+  g.strokeStyle = "#121a2b"; g.lineWidth = 1;
+  for (let x = 1; x < BW; x++) { g.beginPath(); g.moveTo(x * s + .5, s); g.lineTo(x * s + .5, c.height); g.stroke(); }
+  for (let y = 1; y < BH; y++) { g.beginPath(); g.moveTo(0, y * s + .5); g.lineTo(c.width, y * s + .5); g.stroke(); }
+  g.strokeStyle = "#7a2f38"; g.lineWidth = 3; const m = s * .3;        // 負けになるマス（左から3列目の最上段）
+  g.beginPath(); g.moveTo(2 * s + m, s + m); g.lineTo(3 * s - m, 2 * s - m); g.moveTo(3 * s - m, s + m); g.lineTo(2 * s + m, 2 * s - m); g.stroke();
+  const rows = p.board.map((r) => [...r]), pop = new Set(p.popping.map(([x, y]) => x + "," + y)), blink = Math.floor(Date.now() / 70) % 2;
+  rows.forEach((row, y) => row.forEach((ch, x) => {
+    if (ch === ".") return;
+    const links = ch === "O" || y === 0 ? null : [[1, 0], [0, 1]].filter(([dx, dy]) => rows[y + dy] && rows[y + dy][x + dx] === ch);
+    drawBlob(g, x, y, s, ch, pop.has(x + "," + y) ? (blink ? .25 : 1) : 1, links);
+  }));
+  if (p.piece) p.piece.cells.forEach(([x, y, ch]) => { if (y >= 0) drawBlob(g, x, y, s, ch, p.thinking_since ? .75 : 1, null); });
+  g.textAlign = "center";
+  if (p.pending) { g.fillStyle = "#ff7b6b"; g.font = "600 17px 'IBM Plex Mono', monospace"; g.fillText(`おじゃま予告 ${p.pending}`, c.width / 2, s * .66); }
+  if (p.chain_now) { g.font = "700 46px 'Chakra Petch', sans-serif"; g.lineWidth = 6; g.strokeStyle = "#060910"; g.strokeText(`${p.chain_now}連鎖`, c.width / 2, c.height * .42); g.fillStyle = "#fff"; g.fillText(`${p.chain_now}連鎖`, c.width / 2, c.height * .42); }
+  if (!p.alive) { g.fillStyle = "rgba(6,9,16,.72)"; g.fillRect(0, 0, c.width, c.height); g.fillStyle = "#ff7b6b"; g.font = "700 30px 'Chakra Petch', sans-serif"; g.fillText("GAME OVER", c.width / 2, c.height / 2); }
+}
+function drawNext(c, pair) {
+  const g = c.getContext("2d"); g.clearRect(0, 0, c.width, c.height);
+  drawBlob(g, 0, 0, 44, pair[1], 1, null); drawBlob(g, 0, 1, 44, pair[0], 1, null);   // 上が子ブロブ、下が軸ブロブ
+}
+function drawBlocksBoard(side, p) {
+  const c = $(side + "-board"), g = c.getContext("2d"), s = c.width / 10;
+  g.clearRect(0, 0, c.width, c.height);
+  g.strokeStyle = "#121a2b"; g.lineWidth = 1;
+  for (let x = 1; x < 10; x++) { g.beginPath(); g.moveTo(x * s + .5, 0); g.lineTo(x * s + .5, c.height); g.stroke(); }
+  for (let y = 1; y < 20; y++) { g.beginPath(); g.moveTo(0, y * s + .5); g.lineTo(c.width, y * s + .5); g.stroke(); }
+  const cell = (x, y, col, a) => { g.globalAlpha = a; g.fillStyle = col; g.fillRect(x * s + 1, y * s + 1, s - 2, s - 2); g.globalAlpha = a * .35; g.fillStyle = "#fff"; g.fillRect(x * s + 1, y * s + 1, s - 2, 3); g.globalAlpha = 1; };
+  p.board.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ".") cell(x, y, TCOLORS[ch], 1); }));
+  if (p.piece) p.piece.cells.forEach(([x, y, ch]) => cell(x, y, TCOLORS[ch], p.thinking_since ? .75 : 1));
+  if (!p.alive) { g.fillStyle = "rgba(6,9,16,.72)"; g.fillRect(0, 0, c.width, c.height); g.fillStyle = "#ff7b6b"; g.font = "700 26px 'Chakra Petch', sans-serif"; g.textAlign = "center"; g.fillText("TOP OUT", c.width / 2, c.height / 2); }
+}
+function drawBlocksNext(c, type) {
+  const g = c.getContext("2d"); g.clearRect(0, 0, c.width, c.height);
+  TSHAPES[type].forEach(([x, y]) => { g.fillStyle = TCOLORS[type]; g.fillRect(x * 9 + 2, y * 9 + 2, 8, 8); });
+}
+// ゲームごとの描画。ゲームを足すときはここに1行足す
+const RENDER = {
+  blobs: { brand: "BLOBS", board: [300, 650], next: [44, 88], drawBoard, drawNext },
+  blocks: { brand: "BLOCKS", board: [300, 600], next: [40, 28], drawBoard: drawBlocksBoard, drawNext: drawBlocksNext },
+};
+let currentGame = null;
+function setGame(game) {
+  if (game === currentGame || !RENDER[game]) return;
+  currentGame = game; document.body.dataset.game = game; $("brand-game").textContent = RENDER[game].brand;
+  $("rate-wrap").hidden = $("rate-status").hidden = game !== "blobs";
+  for (const side of Object.keys(SIDES)) {
+    const b = $(side + "-board"); [b.width, b.height] = RENDER[game].board; b.getContext("2d").clearRect(0, 0, b.width, b.height);
+    [0, 1, 2].forEach((i) => { const c = $(`${side}-n${i}`); [c.width, c.height] = RENDER[game].next; });
+  }
+}
+function drawSpark(side, hist) {
+  const c = $(side + "-spark"), g = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+  const cw = Math.round(c.clientWidth * dpr), ch = Math.round(c.clientHeight * dpr);
+  if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
+  g.clearRect(0, 0, c.width, c.height);
+  if (!hist.length) return;
+  const max = Math.max(...hist, 300), w = c.width / 60, col = getComputedStyle($("side-" + side)).getPropertyValue("--tone");
+  hist.forEach((v, i) => { const h = Math.max(2, (v / max) * (c.height - 13 * dpr)); g.fillStyle = col; g.globalAlpha = i === hist.length - 1 ? 1 : .55; g.fillRect(i * w, c.height - h, w - 1, h); });
+  g.globalAlpha = 1; g.fillStyle = "#8b97b0"; g.font = `${10 * dpr}px 'IBM Plex Mono', monospace`; g.fillText(`直近${hist.length}手 / 目盛り上限 ${Math.round(max)}ms`, 2, 10 * dpr);
+}
+
+function renderState(st) {
+  latest = st; setGame(st.game); const R = RENDER[st.game];
+  $("llm-how").textContent = st.llm_provider === "jev" ? SIDES.jev.how : SIDES.llm.how;
+  $("jev-strat").textContent = "戦略: " + st.strategy.jev; $("llm-strat").textContent = "戦略: " + st.strategy.llm;
+  $("elapsed").textContent = st.elapsed.toFixed(1); $("dur").textContent = st.duration; $("grav").textContent = st.gravity_ms;
+  $("jev-model").textContent = st.jev_model; setLlm(st.llm_label, st.llm_provider);
+  $("llm-model").textContent = st.llm_model + (st.llm_provider === "claude-sdk" ? " · Agent SDK（サブスク）" : " · API 直結");
+  $("llm-costlabel").textContent = st.llm_provider === "claude-sdk" ? "費用 累計（API 換算）" : "費用 累計（定価×トークン）";
+  const cj = st.players.jev.stats.cost_per_move, cc = st.players.llm.stats.cost_per_move;
+  $("costcmp").innerHTML = cj && cc ? `1手の費用 <b style="color:var(--jev)">${usd(cj)}</b> vs <b style="color:var(--llm)">${usd(cc)}</b>（${st.llm_label} が <b>${(cc / cj).toFixed(1)}倍</b>）` : "";
+  for (const side of Object.keys(SIDES)) {
+    const p = st.players[side], s = p.stats;
+    R.drawBoard(side, p); [0, 1, 2].forEach((i) => { const c = $(`${side}-n${i}`); c.hidden = i >= p.next.length; if (!c.hidden) R.drawNext(c, p.next[i]); }); drawSpark(side, s.ms_hist);
+    $(side + "-g").style.height = Math.min(100, p.pending / p.pending_max * 100) + "%";
+    $(side + "-avg").textContent = fmt(s.ms_avg); $(side + "-p50").textContent = fmt(s.ms_p50); $(side + "-max").textContent = fmt(s.ms_max);
+    $(side + "-tin").textContent = fmt(s.tok_in); $(side + "-tout").textContent = fmt(s.tok_out);
+    const answered = s.ms_hist.length ? s.decisions : 0;
+    $(side + "-tpm").textContent = s.ms_hist.length ? fmt(Math.round((s.tok_in + s.tok_out) / Math.max(1, s.decisions))) : "—";
+    $(side + "-cost").textContent = usd(s.cost_usd); $(side + "-cpm").textContent = usd(s.cost_per_move);
+    $(side + "-cpl").textContent = usd(s.cost_per_unit); $(side + "-cpl-label").textContent = "費用 / " + p.cost_unit;
+    document.querySelectorAll(`#side-${side} [data-tile]`).forEach((el, i) => { const t = p.tiles[i]; el.hidden = !t; if (t) { el.children[0].textContent = t[0]; el.children[1].textContent = t[1]; } });
+    $(side + "-pieces").textContent = `${s.pieces} / ${st.elapsed > 3 ? (s.pieces / st.elapsed * 60).toFixed(0) : "—"}`;
+    const set = (id, v) => { const el = $(side + id); el.textContent = v; el.classList.toggle("warn", /[1-9]/.test(String(v))); };
+    set("-nit", s.not_in_time); set("-inf", s.infeasible); set("-fmt", `${s.format_dev} / ${s.invalid} / ${s.errors}`);
+    $("side-" + side).classList.toggle("lost", !p.alive);
+  }
+}
+function tickMs() {
+  if (latest) for (const side of Object.keys(SIDES)) {
+    const p = latest.players[side], box = $(side + "-msbox"), thinking = p.thinking_since != null && p.alive;
+    box.classList.toggle("thinking", thinking);
+    $(side + "-mslabel").textContent = thinking ? "回答待ち…（経過時間）" : "直近の回答時間";
+    $(side + "-ms").textContent = thinking ? fmt(Math.max(0, Math.round(Date.now() - p.thinking_since))) : fmt(p.stats.ms_last);
+  }
+  requestAnimationFrame(tickMs);
+}
+requestAnimationFrame(tickMs);
+
+const OUTCOME = { applied: "", not_in_time: " ⚠ 着地に間に合わず（破棄）", infeasible: " ⚠ 届いた時点で置けない高さ", invalid: " ⚠ 無効な回答", error: " ⚠ エラー" };
+function addDecision(d) {
+  const key = `${d.side}-${d.n}`; decisions[key] = d;
+  const log = $(d.side + "-log"), atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  const ln = document.createElement("div");
+  ln.className = "ln" + (d.outcome !== "applied" || d.error ? " bad" : ""); ln.dataset.key = key;
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  ln.innerHTML = `<span class="n">#${String(d.n).padStart(3, "0")} ${d.piece} ${d.at.toFixed(1)}s</span>  <span class="ms2">${Math.round(d.ms)}ms</span>  <span class="tok">in ${fmt(d.tok_in)} / out ${fmt(d.tok_out)} / ${usd(d.cost_usd)}</span>\n<span class="out">${esc(d.summary || d.error || "")}</span>${d.pick ? ` → <b>${d.pick}</b>` : ""}${OUTCOME[d.outcome] || ""}${d.error ? " ｜" + esc(d.error) : ""}`;
+  log.appendChild(ln);
+  while (log.children.length > 400) { delete decisions[log.firstChild.dataset.key]; log.removeChild(log.firstChild); }
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+document.addEventListener("click", (e) => {
+  const ln = e.target.closest(".ln"); if (!ln) return;
+  document.querySelectorAll(".ln.sel").forEach((x) => x.classList.remove("sel")); ln.classList.add("sel");
+  const d = decisions[ln.dataset.key]; if (!d) return;
+  $("inspect").textContent = JSON.stringify({ side: d.side, n: d.n, piece: d.piece, outcome: d.outcome, pick: d.pick, ms: d.ms, tok_in: d.tok_in, tok_out: d.tok_out, chosen_features: d.chosen_features, raw_output: d.raw_output, request: d.request, response: d.response }, null, 2);
+});
+function addEvent(text, at) {
+  const el = document.createElement("div"); el.innerHTML = `<b>${at.toFixed(1)}s</b> ${text}`; $("events").prepend(el); $("lastEvent").textContent = text;
+}
+
+let providers = {}, games = {};
+function fillStrategies() {
+  const g = games[$("game").value]; if (!g) return;
+  for (const id of ["strategy", "strategy_right"]) { const keep = $(id).value; $(id).innerHTML = g.strategies.map((x) => `<option value="${x}">${x}</option>`).join(""); if (g.strategies.includes(keep)) $(id).value = keep; }
+  if (!latest || latest.game !== $("game").value || !busy) setGame($("game").value);
+}
+let busy = false;
+function setLlm(label, provider) {
+  const tone = { openai: "gpt", jev: "jev2" }[provider] || "claude", root = document.documentElement.style;
+  root.setProperty("--llm", `var(--${tone})`); root.setProperty("--llm-bg", `var(--${tone}-bg)`);
+  $("llm-title").textContent = label; $("brand-llm").textContent = label;
+}
+function fillModels() {
+  const p = providers[$("provider").value]; if (!p) return;
+  $("sr-wrap").hidden = $("provider").value !== "jev";
+  $("model").innerHTML = p.models.map((x) => `<option value="${x}">${x}${(p.unlisted || []).includes(x) ? "（このキーの一覧になし）" : ""}</option>`).join(""); setLlm(p.label, $("provider").value);
+}
+$("provider").onchange = fillModels;
+$("game").onchange = fillStrategies;
+$("strategy").onfocus = $("strategy_right").onfocus = () => ws.send(JSON.stringify({ cmd: "hello" }));   // 戦略ファイルを足したら一覧に出るように
+let ws;
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { $("phase").textContent = "待機中"; };
+  ws.onclose = () => { $("phase").textContent = "サーバーと切断。再接続中…"; setTimeout(connect, 1500); };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.t === "hello") {
+      providers = m.providers; games = m.games;
+      if (!$("game").options.length) { $("game").innerHTML = Object.entries(games).map(([k, v]) => `<option value="${k}">${v.title}</option>`).join(""); }
+      fillStrategies();
+      if ($("provider").options.length) return;
+      $("provider").innerHTML = Object.entries(providers).map(([k, v]) => `<option value="${k}" ${v.available ? "" : "disabled"}>${v.name}${v.available ? "" : "（未登録: " + v.need + "）"}</option>`).join("");
+      $("provider").value = Object.keys(providers).find((k) => providers[k].available); fillModels();
+      if (!m.jev_key) { $("phase").textContent = "TYPESAFE_API_KEY がありません。README の「起動」を見て、キーを渡してサーバーを起動し直してください"; $("start").disabled = true; }
+    } else if (m.t === "state") renderState(m);
+    else if (m.t === "decision") addDecision(m);
+    else if (m.t === "event") addEvent(m.text, m.at);
+    else if (m.t === "phase") { $("phase").textContent = m.text; busy = ["connecting", "ready", "playing"].includes(m.phase); $("start").disabled = busy; $("stop").disabled = !busy; }
+    else if (m.t === "end") {
+      busy = false; $("phase").textContent = "試合終了"; $("start").disabled = false; $("stop").disabled = true;
+      const name = { jev: "JEV", llm: `${m.llm_label}（${m.llm_model}）`, draw: "引き分け" }[m.winner];
+      $("result").innerHTML = `勝者: <b style="color:var(--${m.winner === "draw" ? "ink" : m.winner})">${name}</b> — ${m.reason}<br><span class="note">ログ: ${m.log}（seed ${m.seed}）</span>`;
+      for (const side of Object.keys(SIDES)) { const b = $(side + "-badge"); b.hidden = m.winner === "draw"; b.className = "badge " + (m.winner === side ? "win" : "lose"); b.textContent = m.winner === side ? "WIN" : "LOSE"; }
+    }
+  };
+}
+connect();
+$("start").onclick = () => {
+  $("ratev").textContent = $("rate").value;
+  for (const side of Object.keys(SIDES)) { $(side + "-log").innerHTML = ""; $(side + "-badge").hidden = true; }
+  $("events").innerHTML = ""; $("result").innerHTML = ""; $("inspect").textContent = "ログの行をクリックすると、そのときのリクエストとレスポンスの全文を表示します。";
+  ws.send(JSON.stringify({ cmd: "start", game: $("game").value, strategy: $("strategy").value, strategy_right: $("strategy_right").value, provider: $("provider").value, model: $("model").value, thinking: $("thinking").value, gravity_ms: Number($("gravity").value), garbage_rate: Number($("rate").value), duration_s: Number($("duration").value) }));
+};
+$("stop").onclick = () => ws.send(JSON.stringify({ cmd: "stop" }));
+</script>
+</body>
+</html>
