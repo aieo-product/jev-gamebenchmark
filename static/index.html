@@ -138,6 +138,7 @@ const TSHAPES = { I: [[0,0],[1,0],[2,0],[3,0]], O: [[0,0],[1,0],[0,1],[1,1]], T:
 const BW = 6, BH = 13;
 const SIDES = { jev: { title: "JEV", how: "戦略ファイルの問い（既定: 候補ごとに Score 1問）を1リクエストで送り、最高点を採用" }, llm: { title: "CLAUDE", how: "同じ特徴量・同じ評価基準を渡し {\"pick\":\"pNN\"} を返させる" } };
 const HUMAN_HOW = "あなたがキーボードで操作します。回答時間の欄は、ピースが出てから固定するまでの時間です";
+// 人間モードのキー設定（変えるならここ。右辺は left / right / cw / ccw / down / drop）
 const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "cw", x: "cw", X: "cw", z: "ccw", Z: "ccw", ArrowDown: "down", " ": "drop" };
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
@@ -261,8 +262,9 @@ function renderState(st) {
   $("jev-strat").textContent = "戦略: " + st.strategy.jev; $("llm-strat").textContent = "戦略: " + st.strategy.llm;
   $("elapsed").textContent = st.elapsed.toFixed(1); $("dur").textContent = st.duration; $("grav").textContent = st.gravity_ms;
   $("jev-model").textContent = st.jev_model; setLlm(st.llm_label, st.llm_provider);
-  $("llm-model").textContent = st.llm_model + (st.llm_provider === "claude-sdk" ? " · Agent SDK（サブスク）" : " · API 直結");
-  $("llm-costlabel").textContent = st.llm_provider === "claude-sdk" ? "費用 累計（API 換算）" : "費用 累計（定価×トークン）";
+  const sub = providers[st.llm_provider]?.subscription;
+  $("llm-model").textContent = st.llm_model + (st.llm_provider === "jev" ? "" : sub ? " · ログイン（サブスク）" : " · API 直結");
+  $("llm-costlabel").textContent = sub ? "費用 累計（API 換算）" : "費用 累計（定価×トークン）";
   const cj = st.players.jev.stats.cost_per_move, cc = st.players.llm.stats.cost_per_move;
   $("costcmp").innerHTML = cj && cc ? `1手の費用 <b style="color:var(--jev)">${usd(cj)}</b> vs <b style="color:var(--llm)">${usd(cc)}</b>（${st.llm_label} が <b>${(cc / cj).toFixed(1)}倍</b>）` : "";
   for (const side of Object.keys(SIDES)) {
@@ -360,9 +362,9 @@ function connect() {
       if (!$("game").options.length) { $("game").innerHTML = Object.entries(games).map(([k, v]) => `<option value="${k}">${v.title}</option>`).join(""); }
       fillStrategies();
       if ($("provider").options.length) return;
-      $("provider").innerHTML = Object.entries(providers).map(([k, v]) => `<option value="${k}" ${v.available ? "" : "disabled"}>${v.name}${v.available ? "" : "（未登録: " + v.need + "）"}</option>`).join("");
+      $("provider").innerHTML = Object.entries(providers).map(([k, v]) => `<option value="${k}" ${v.available ? "" : "disabled"}>${v.name}${v.available ? "" : "（未設定: " + v.need + "）"}</option>`).join("");
       $("provider").value = Object.keys(providers).find((k) => providers[k].available); fillModels();
-      if (!m.jev_key) { $("phase").textContent = "TYPESAFE_API_KEY がありません。README の「起動」を見て、キーを渡してサーバーを起動し直してください"; $("start").disabled = true; }
+      if (!m.jev_key) { $("phase").textContent = "TYPESAFE_API_KEY が未設定です。README の「起動」を見て、キーを渡してサーバーを起動し直してください"; $("start").disabled = true; }
     } else if (m.t === "state") renderState(m);
     else if (m.t === "decision") addDecision(m);
     else if (m.t === "event") addEvent(m.text, m.at);

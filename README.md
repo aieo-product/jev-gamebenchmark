@@ -22,15 +22,29 @@
 
 ```bash
 git clone https://github.com/aieo-product/jev-gamebenchmark && cd jev-gamebenchmark
-export TYPESAFE_API_KEY=...        # 必須（Jev）。https://console.typesafe.ai で発行
-export ANTHROPIC_API_KEY=...       # 任意（Claude と対戦）
-export OPENAI_API_KEY=...          # 任意（GPT と対戦）
 ./run.sh                           # → http://localhost:8770
 ```
 
-- 初回は `run.sh` が `.venv` を作って依存を入れます（Python 3.10+。`uv` があれば使います）。
-- LLM のキーがなくても、**Jev の戦略どうしの対戦**と、Claude Code にログイン済みなら Agent SDK（サブスク認証）での Claude 対戦ができます。
-- macOS で `akc`（キーチェーン管理 CLI）を使っている場合は、環境変数を設定しなくても `run.sh` がキーチェーンから渡します。
+初回は `run.sh` が `.venv` を作って依存を入れ（Python 3.10+。`uv` があれば使います）、**API キーの渡し方**を聞きます。
+
+| 渡し方 | やること |
+|---|---|
+| `env`（環境変数） | 起動前に `export TYPESAFE_API_KEY=...`（必須。https://console.typesafe.ai で発行）、`export ANTHROPIC_API_KEY=...` / `export OPENAI_API_KEY=...`（任意） |
+| `akc`（macOS キーチェーン） | [akc](https://github.com/aieo-product/AIkeychain)（`npm i -g aikeychain`）に同じ名前で登録しておく: `akc set TYPESAFE_API_KEY` など。`run.sh` が `akc run` でサーバーの子プロセスにだけ渡します |
+
+選択は `.arena-keys` に保存されます（変更は `ARENA_KEYS=env ./run.sh` / `ARENA_KEYS=akc ./run.sh`）。キーの名前はどちらの方式でも `TYPESAFE_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` です。
+
+対戦相手ごとに必要なもの:
+
+| 対戦相手 | 必要なもの |
+|---|---|
+| Claude — API 直結 | `ANTHROPIC_API_KEY` |
+| GPT — OpenAI API 直結 | `OPENAI_API_KEY` |
+| Jev — 戦略どうしの対戦 | `TYPESAFE_API_KEY` だけ |
+| Claude — Agent SDK | [Claude Code](https://claude.com/claude-code) にログイン済みであること（サブスク。API キー不要） |
+| GPT — Codex app-server | [Codex CLI](https://github.com/openai/codex)（`npm i -g @openai/codex`）で `codex login` 済みであること（ChatGPT のサブスク。API キー不要） |
+
+ログイン（サブスク）で動かす2つは請求がないので、画面の費用は「API 換算額」です。速度の比較は API 直結が本筋です（ログイン経由は CLI のプロセスを挟みます）。
 - 費用の目安: Jev は入力 $0.042 / 100万トークン（出力無料）。1手 約 $0.0002〜0.0004、3分の試合で $0.1 前後。LLM 側は各社の定価どおり。
 
 ## 戦略を書き換える（3ステップ）
@@ -96,11 +110,24 @@ Blobs・Jev 単独 100手（`python -m arena.solo blobs -s build-big-chains,pop-
 
 各回答の実時間（ms）、トークン、費用（累計・1手あたり・攻撃1単位あたり）、どんな出力で操作したか（行をクリックでリクエスト／レスポンス全文）、間に合わなかった回数、形式逸脱。すべて `logs/*.jsonl` に保存されます（戦略ファイルの全文も記録）。
 
-対戦相手は4通り: Claude（API 直結）／GPT（OpenAI API 直結）／Jev（戦略どうし）／Claude（Agent SDK、サブスク認証）。速度の比較は API 直結が本筋です。
+対戦相手は5通り: Claude（API 直結）／GPT（OpenAI API 直結）／Jev（戦略どうし）／Claude（Agent SDK、Claude Code のログイン）／GPT（Codex app-server、ChatGPT のログイン）。
 
-### 自分で対戦する
+### 自分で対戦する（キー設定）
 
-「左側」を **人間（キーボード）** にして対戦開始。<kbd>←</kbd><kbd>→</kbd> 移動、<kbd>↑</kbd>/<kbd>X</kbd> 回転、<kbd>Z</kbd> 逆回転、<kbd>↓</kbd> 1段落とす、<kbd>Space</kbd> 一気に落とす。着地後 0.5秒は動かせます。回答ログには押したキーが、回答時間の欄には「ピースが出てから固定するまでの時間」が出るので、自分の手の速さをモデルと比べられます。相手の LLM に渡す戦略は「戦略」で選びます。
+「左側」を **人間（キーボード）** にして対戦開始。画面のどこかをクリックしてからキーを押します。
+
+| キー | 操作 |
+|---|---|
+| <kbd>←</kbd> <kbd>→</kbd> | 左右に移動 |
+| <kbd>↑</kbd> または <kbd>X</kbd> | 回転（時計回り） |
+| <kbd>Z</kbd> | 逆回転 |
+| <kbd>↓</kbd> | 1段落とす |
+| <kbd>Space</kbd> | 一気に落として固定 |
+
+- 着地してから 0.5秒は動かせます（その間に動かして再び落ちられる状態になれば、固定は延びます）。
+- Blobs の回転は軸を中心に子が 上→右→下→左 と回ります。壁や床にぶつかるときは軸を1マスずらして入れます。
+- キーを変えるには `static/index.html` 先頭の `KEYMAP` を編集します。
+- 回答ログには押したキーが、回答時間の欄には「ピースが出てから固定するまでの時間」が出るので、自分の手の速さをモデルと比べられます。相手の LLM に渡す戦略は「戦略」で選びます。
 
 ## ルールと公平性
 
@@ -137,8 +164,8 @@ static/index.html  画面（描画とログ表示だけ）
 ## English quick start
 
 ```bash
-export TYPESAFE_API_KEY=...   # required; ANTHROPIC_API_KEY / OPENAI_API_KEY optional
-./run.sh                      # → http://localhost:8770
+export TYPESAFE_API_KEY=...   # required; ANTHROPIC_API_KEY / OPENAI_API_KEY optional (or keep them in macOS Keychain via akc)
+./run.sh                      # → http://localhost:8770 — asks once whether keys come from env or akc
 cp strategies/blobs/build-big-chains.py strategies/blobs/mine.py     # edit LEVELS / features() / tie_break()
 python -m arena.solo blobs -s mine,build-big-chains                 # measure quality cheaply, no opponent
 ```

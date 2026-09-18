@@ -1,12 +1,20 @@
 """対戦するエージェント（Jev / Claude / GPT）。ゲームにも戦略にも依存しない通信部分。
 
 API キーは環境変数から読む（TYPESAFE_API_KEY は必須、ANTHROPIC_API_KEY・OPENAI_API_KEY は任意）。
-読み込んだら環境から消す（Claude Agent SDK の子プロセスに渡さないため）。
+読み込んだら環境から消す（Claude Agent SDK / Codex の子プロセスに渡さないため）。
+
+対戦相手（PROVIDERS）:
+  claude-api  Anthropic API 直結（ANTHROPIC_API_KEY）
+  openai      OpenAI API 直結（OPENAI_API_KEY）
+  jev         Jev どうし（戦略の比較）
+  claude-sdk  Claude Agent SDK。Claude Code のログイン（サブスク）で動く。API キー不要
+  codex-app   Codex CLI の app-server。ChatGPT のログイン（サブスク）で動く。API キー不要
 """
 import asyncio
 import json
 import os
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +56,8 @@ CLAUDE_LIST_PRICE = {"claude-haiku-4-5": (1.0, 5.0), "claude-sonnet-5": (2.0, 10
 OPENAI_LIST_PRICE = {"gpt-5.6-sol": (4.0, 0.40, 20.0), "gpt-5.6-terra": (2.0, 0.20, 12.0), "gpt-5.6-luna": (0.20, 0.02, 1.20)}
 CLAUDE_MODELS, OPENAI_MODELS = list(CLAUDE_LIST_PRICE), list(OPENAI_LIST_PRICE)
 OPENAI_LISTED = set()  # 起動時に models.list() で確認できたもの
-OPENAI_KEY_NAME = os.environ.get("ARENA_OPENAI_KEY_NAME", "OPENAI_API_KEY")  # 表示用（値ではない）
+CODEX_MODELS = list(OPENAI_LIST_PRICE)  # 起動時に app-server の model/list で置き換える
+CODEX_BIN = shutil.which("codex")
 
 
 @dataclass
@@ -320,16 +329,151 @@ class ClaudeSdkAgent:
                             {"text": raw, "usage": u, "duration_api_ms": getattr(res, "duration_api_ms", None), "stop_reason": getattr(res, "stop_reason", None)}, err)
 
 
+class CodexAppServerAgent:
+    """OpenAI Codex CLI の app-server（JSON-RPC over stdio）を常駐させ、ChatGPT のログイン（サブスク認証）で動かす。API キーを使わない。
+    毎手を独立した判断にするため、1手ごとに新しいスレッド（ephemeral）を使う。スレッドの準備は計測の外で行う。"""
+
+    def __init__(self, model, thinking):
+        self.model, self.thinking, self.system = model, thinking, ""
+        self.proc, self.nid, self.pending, self.thread, self._preparing = None, 0, {}, None, None
+        self.reader, self.notifications = None, asyncio.Queue()
+
+    async def start(self, system):
+        if not CODEX_BIN:
+            raise RuntimeError("codex コマンドが見つかりません（npm i -g @openai/codex → codex login）。")
+        self.system = system
+        self.proc = await asyncio.create_subprocess_exec(CODEX_BIN, "app-server", stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        self.reader = asyncio.create_task(self._read())
+        await self._call("initialize", {"clientInfo": {"name": "jev-gamebenchmark", "version": "1"}})
+        self.thread = await self._new_thread()
+        d = await self._turn(WARMUP_USER + REMINDER)  # ウォームアップ。ログインや利用上限の問題はここで分かる
+        if d.error:
+            raise RuntimeError(f"Codex: {d.error}")
+        self._preparing = asyncio.create_task(self._new_thread())
+
+    async def stop(self):
+        if self._preparing:
+            await asyncio.gather(self._preparing, return_exceptions=True)
+        if self.reader:
+            self.reader.cancel()
+        if self.proc:
+            try:
+                self.proc.stdin.close()
+                self.proc.terminate()
+                await asyncio.wait_for(self.proc.wait(), timeout=5)
+            except Exception:
+                pass
+
+    async def _read(self):
+        while True:
+            line = await self.proc.stdout.readline()
+            if not line:
+                for f in self.pending.values():
+                    if not f.done():
+                        f.set_exception(RuntimeError("codex app-server が終了しました"))
+                return
+            m = json.loads(line)
+            if "id" in m and m["id"] in self.pending:
+                f = self.pending.pop(m["id"])
+                if "error" in m:
+                    f.set_exception(RuntimeError(json.dumps(m["error"], ensure_ascii=False)[:300]))
+                else:
+                    f.set_result(m.get("result"))
+            elif m.get("method"):
+                await self.notifications.put(m)
+
+    async def _call(self, method, params):
+        self.nid += 1
+        f = self.pending[self.nid] = asyncio.get_running_loop().create_future()
+        self.proc.stdin.write((json.dumps({"jsonrpc": "2.0", "id": self.nid, "method": method, "params": params}) + "\n").encode())
+        await self.proc.stdin.drain()
+        return await asyncio.wait_for(f, timeout=60)
+
+    async def _new_thread(self):
+        r = await self._call("thread/start", {"ephemeral": True, "sandbox": "read-only", "approvalPolicy": "never", "model": self.model, "cwd": str(ROOT),
+                                              "baseInstructions": self.system})  # baseInstructions で Codex 既定の指示を置き換え、ツールを使わせない
+        return r["thread"]["id"]
+
+    async def _turn(self, text):
+        """1ターン送り、最終メッセージ・トークン使用量・エラーを集める。"""
+        while not self.notifications.empty():
+            self.notifications.get_nowait()
+        params = {"threadId": self.thread, "input": [{"type": "text", "text": text}]}
+        params["effort"] = {"off": "low", "adaptive-low": "low", "adaptive": "medium"}.get(self.thinking, "low")  # Codex の推論レベルは low が最小
+        t0 = time.perf_counter()
+        await self._call("turn/start", params)
+        raw, usage, err = "", None, None
+        while True:
+            m = await asyncio.wait_for(self.notifications.get(), timeout=60)
+            p, meth = m.get("params") or {}, m["method"]
+            if p.get("threadId") not in (None, self.thread):
+                continue
+            if meth == "item/completed" and p["item"].get("type") == "agentMessage":
+                raw = p["item"].get("text") or raw
+            elif meth == "thread/tokenUsage/updated":
+                usage = (p.get("tokenUsage") or {}).get("last") or usage
+            elif meth == "error":
+                err = (p.get("error") or {}).get("message") or "error"
+            elif meth == "turn/completed":
+                t = p.get("turn") or {}
+                if t.get("status") == "failed" and not err:
+                    err = (t.get("error") or {}).get("message") or "turn failed"
+                break
+        u = usage or {}
+        tok_in, tok_out = u.get("inputTokens", 0) + u.get("cachedInputTokens", 0), u.get("outputTokens", 0) + u.get("reasoningOutputTokens", 0)
+        pi, pc, po = OPENAI_LIST_PRICE.get(self.model, (0.0, 0.0, 0.0))
+        cost = (u.get("inputTokens", 0) * pi + u.get("cachedInputTokens", 0) * pc + tok_out * po) / 1_000_000  # API 換算額（サブスクでは請求されない）
+        return llm_decision(raw, (time.perf_counter() - t0) * 1000, tok_in, tok_out, cost,
+                            {"via": "codex-app-server", "model": self.model, "effort": params.get("effort"), "base_instructions": self.system, "user_message_text": text},
+                            {"text": raw, "usage": u, "thread": self.thread}, err)
+
+    async def decide(self, req: Request) -> Decision:
+        if self._preparing:  # 前の手のあとに作り始めた新しいスレッドを待つ（通常は完了済み）
+            try:
+                self.thread = await self._preparing
+            except Exception as e:
+                return Decision(None, 0.0, error=f"thread/start に失敗: {e}")
+            self._preparing = None
+        payload = llm_payload(req)
+        d = await self._turn(json.dumps(payload, ensure_ascii=False) + REMINDER)
+        d.request["user_message"] = payload
+        self._preparing = asyncio.create_task(self._new_thread())  # 計測の外で次のスレッドを用意する
+        return d
+
+
 PROVIDERS = {
     "claude-api": {"label": "CLAUDE", "name": "Claude — API 直結", "cls": ClaudeApiAgent, "models": CLAUDE_MODELS, "available": lambda: bool(ANTHROPIC_KEY and anthropic), "need": "ANTHROPIC_API_KEY"},
     "openai": {"label": "GPT", "name": "GPT — OpenAI API 直結", "cls": OpenAIAgent, "models": OPENAI_MODELS, "available": lambda: bool(OPENAI_KEY and openai), "need": "OPENAI_API_KEY"},
     "jev": {"label": "JEV 2", "name": "Jev — 戦略どうしの対戦", "cls": JevAgent, "models": ["jev-latest"], "available": lambda: bool(JEV_KEY), "need": "TYPESAFE_API_KEY"},
-    "claude-sdk": {"label": "CLAUDE", "name": "Claude — Agent SDK（サブスク）", "cls": ClaudeSdkAgent, "models": CLAUDE_MODELS, "available": lambda: ClaudeSDKClient is not None, "need": "pip install claude-agent-sdk"},
+    "claude-sdk": {"label": "CLAUDE", "name": "Claude — Agent SDK（Claude Code のログイン）", "cls": ClaudeSdkAgent, "models": CLAUDE_MODELS, "available": lambda: ClaudeSDKClient is not None, "need": "pip install claude-agent-sdk", "subscription": True},
+    "codex-app": {"label": "GPT", "name": "GPT — Codex app-server（ChatGPT のログイン）", "cls": CodexAppServerAgent, "models": CODEX_MODELS, "available": lambda: bool(CODEX_BIN), "need": "codex CLI", "subscription": True},
 }
 
 
 def llm_list_price(model):
     return CLAUDE_LIST_PRICE.get(model) or OPENAI_LIST_PRICE.get(model)
+
+
+async def discover_codex_models():
+    """codex app-server の model/list で、このログインで選べるモデルに置き換える。"""
+    if not CODEX_BIN:
+        return
+    try:
+        proc = await asyncio.create_subprocess_exec(CODEX_BIN, "app-server", stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        for i, (method, params) in enumerate((("initialize", {"clientInfo": {"name": "jev-gamebenchmark", "version": "1"}}), ("model/list", {})), 1):
+            proc.stdin.write((json.dumps({"jsonrpc": "2.0", "id": i, "method": method, "params": params}) + "\n").encode())
+            await proc.stdin.drain()
+            while True:
+                m = json.loads(await asyncio.wait_for(proc.stdout.readline(), timeout=15))
+                if m.get("id") == i:
+                    break
+        ids = [x["id"] for x in m.get("result", {}).get("data", []) if not x.get("hidden")]
+        if ids:
+            CODEX_MODELS[:] = ids
+        proc.stdin.close()
+        proc.terminate()
+    except Exception as e:
+        print("codex のモデル一覧を取得できませんでした:", type(e).__name__)
 
 
 async def discover_openai_models():

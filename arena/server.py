@@ -363,7 +363,7 @@ hub = Hub()
 def hello():
     return {"t": "hello", "jev_key": bool(A.JEV_KEY),
             "games": {k: {"title": g.TITLE, "strategies": list_strategies(k)} for k, g in GAMES.items()},
-            "providers": {k: {"name": v["name"] + (f"（{A.OPENAI_KEY_NAME}）" if k == "openai" and A.OPENAI_KEY_NAME != "OPENAI_API_KEY" else ""), "label": v["label"], "models": v["models"],
+            "providers": {k: {"name": v["name"], "label": v["label"], "models": v["models"], "subscription": v.get("subscription", False),
                               "unlisted": [m for m in v["models"] if k == "openai" and A.OPENAI_LISTED and m not in A.OPENAI_LISTED],
                               "available": v["available"](), "need": v["need"]} for k, v in A.PROVIDERS.items()}}
 
@@ -404,7 +404,7 @@ async def index(_):
 
 def main():
     app = web.Application()
-    app.on_startup.append(lambda _app: A.discover_openai_models())
+    app.on_startup.append(lambda _app: asyncio.gather(A.discover_openai_models(), A.discover_codex_models()))
     app.add_routes([web.get("/", index), web.get("/ws", ws_handler)])
     print(f"Jev Game Benchmark → http://localhost:{PORT}   (Jev key: {'OK' if A.JEV_KEY else 'なし'} / Anthropic key: {'OK' if A.ANTHROPIC_KEY else 'なし'} / OpenAI key: {'OK' if A.OPENAI_KEY else 'なし'})", flush=True)
     web.run_app(app, host="127.0.0.1", port=PORT, print=None)
