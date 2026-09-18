@@ -1,6 +1,6 @@
 # 以前の計測（2026-09-17、このリポジトリの前身の実装）
 
-Blocks（ライン消しパズル）だけの前身の実装で取った結果です。戦略は現在の `strategies/blocks/default.py` と同じ内容ですが、プロンプト内のゲームの呼び方が現在と異なるため、[benchmarks.md](benchmarks.md) の数値とは別物として扱ってください。
+Blocks（ライン消しパズル）だけの前身の実装で取った結果です。戦略は現在の `strategies/blocks/keep-flat.py` と同じ内容ですが、プロンプト内のゲームの呼び方が現在と異なるため、[benchmarks.md](benchmarks.md) の数値とは別物として扱ってください。
 
 ## 対戦（60秒 × 2試合、思考 off、Jev の 16戦全勝）
 
@@ -22,12 +22,12 @@ Blocks（ライン消しパズル）だけの前身の実装で取った結果�
 
 | エージェント | 穴を作った手の割合 |
 |---|---|
-| Jev（最適化後の戦略 = 現在の `default`） | 1.7% |
+| Jev（最適化後の戦略 = 現在の `keep-flat`） | 1.7% |
 | Claude Fable 5.1 | 2.5% |
 | Claude Opus 5 | 3.3% |
 | GPT-5.6 sol | 3.3% |
 | GPT-5.6 terra | 4.2% |
-| Jev（最適化前の戦略 = 現在の `baseline`） | 5.0% |
+| Jev（最適化前の戦略 = 現在の `avoid-holes-first`） | 5.0% |
 | Claude Sonnet 5 | 6.7% |
 | コードの評価関数（定番の重み） | 10.0% |
 | GPT-5.6 luna | 13.3% |

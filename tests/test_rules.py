@@ -36,8 +36,8 @@ def test_blocks_lines():
 def test_strategies_load_and_play():
     """すべての戦略ファイルが読み込めて、features が全候補で JSON になること。コードの評価関数で20手進めて確かめる。"""
     for gid, gmod in GAMES.items():
-        for name in list_strategies(gid):
-            st = Strategy(gmod, name)
+        for meta in list_strategies(gid):
+            st = Strategy(gmod, meta["name"])
             assert st.llm_system() and 2 <= len(st.levels) <= 10
             r = asyncio.run(play(gmod, "code", st, 20, 1))
             assert r["pieces"] == 20, r

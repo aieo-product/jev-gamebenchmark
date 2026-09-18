@@ -1,7 +1,7 @@
 """ブラウザなしで1試合まわす（サーバーが起動している必要がある）。CI や連続計測用。
 
   python -m arena.headless blobs claude-api claude-haiku-4-5 --seconds 60
-  python -m arena.headless blocks jev jev-latest --strategy default --strategy-right baseline   # 戦略どうしの対戦
+  python -m arena.headless blocks jev jev-latest --strategy keep-flat --strategy-right avoid-holes-first   # 戦略どうしの対戦
 """
 import argparse
 import asyncio
@@ -17,7 +17,7 @@ async def main():
     ap.add_argument("provider", help="claude-api | openai | jev | claude-sdk")
     ap.add_argument("model")
     ap.add_argument("--seconds", type=int, default=60)
-    ap.add_argument("--strategy", default="default")
+    ap.add_argument("--strategy", default="")
     ap.add_argument("--strategy-right", default="")
     ap.add_argument("--thinking", default="off")
     ap.add_argument("--gravity-ms", type=int, default=800)

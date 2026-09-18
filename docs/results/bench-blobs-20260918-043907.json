@@ -1,7 +1,7 @@
 {
  "game": "blobs",
  "date": "2026-09-18T04:39:07",
- "strategy": "default",
+ "strategy": "build-big-chains",
  "seconds": 60,
  "thinking": "off",
  "gravity_ms": 800,

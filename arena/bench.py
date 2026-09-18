@@ -14,7 +14,7 @@ from datetime import datetime
 
 import aiohttp
 
-from .strategy import ROOT
+from .strategy import ROOT, default_strategy
 
 DEFAULT_OPPONENTS = ("claude-api:claude-haiku-4-5,claude-api:claude-sonnet-5,claude-api:claude-opus-5,claude-api:claude-fable-5-1,"
                      "openai:gpt-5.6-luna,openai:gpt-5.6-terra,openai:gpt-5.6-sol")
@@ -37,13 +37,14 @@ async def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("game")
     ap.add_argument("--opponents", default=DEFAULT_OPPONENTS, help="provider:model をカンマ区切りで")
-    ap.add_argument("--strategy", default="default")
+    ap.add_argument("--strategy", default="")
     ap.add_argument("--seconds", type=int, default=60)
     ap.add_argument("--seeds", default="1001,2002")
     ap.add_argument("--thinking", default="off")
     ap.add_argument("--gravity-ms", type=int, default=800)
     ap.add_argument("--garbage-rate", type=int, default=70)
     a = ap.parse_args()
+    a.strategy = a.strategy or default_strategy(a.game)
     out = {"game": a.game, "date": datetime.now().isoformat(timespec="seconds"), "strategy": a.strategy, "seconds": a.seconds, "thinking": a.thinking,
            "gravity_ms": a.gravity_ms, "garbage_rate": a.garbage_rate, "matches": []}
     path = ROOT / "docs" / "results" / f"bench-{a.game}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"

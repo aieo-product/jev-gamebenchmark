@@ -1,6 +1,7 @@
 """戦略ファイル（strategies/<game>/<name>.py）の読み込みと、書かれていない部分の既定の動作。
 
 戦略ファイルに書くもの（* は必須）:
+    DESCRIPTION    … 画面の選択肢に出る一言。RECOMMENDED = True を書くと先頭に出る
   * QUESTION       … 何を判断させるか（LLM のプロンプトに入る）
   * INSTRUCTIONS   … Jev の各問いの文。`{id}` が候補 ID（p00, p01, …）に置き換わる
   * LEVELS         … Score の評価基準（悪い → 良い の順、2〜10 段階）
@@ -26,8 +27,22 @@ NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 
 
 def list_strategies(game_id):
-    names = sorted(p.stem for p in (STRATEGY_DIR / game_id).glob("*.py") if NAME_RE.match(p.stem))
-    return sorted(names, key=lambda n: n != "default")  # default を先頭に
+    """[{"name", "description", "recommended"}, ...]。推奨（RECOMMENDED = True）を先頭に、あとは名前順。"""
+    out = []
+    for p in sorted((STRATEGY_DIR / game_id).glob("*.py")):
+        if not NAME_RE.match(p.stem):
+            continue
+        src = p.read_text(encoding="utf-8")
+        m = re.search(r'^DESCRIPTION\s*=\s*"([^"]*)"', src, re.M)  # 読み込まずに（実行せずに）先頭の定数だけ拾う
+        out.append({"name": p.stem, "description": m.group(1) if m else "", "recommended": bool(re.search(r"^RECOMMENDED\s*=\s*True", src, re.M))})
+    return sorted(out, key=lambda s: (not s["recommended"], s["name"]))
+
+
+def default_strategy(game_id):
+    names = list_strategies(game_id)
+    if not names:
+        raise StrategyError(f"strategies/{game_id}/ に戦略ファイルがありません")
+    return names[0]["name"]
 
 
 class StrategyError(Exception):

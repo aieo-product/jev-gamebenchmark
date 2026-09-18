@@ -230,11 +230,35 @@ class Game:
         dx, dy = ROT[p["rot"]]
         return [(p["x"], p["y"]), (p["x"] + dx, p["y"] + dy)]
 
+    def _free(self, cells):
+        return all(0 <= x < W and y < H and (y < 0 or not self.board[y][x]) for x, y in cells)
+
+    def can_fall(self):
+        return self._free([(x, y + 1) for x, y in self._cells()])
+
     def step_down(self):
-        if not all(y + 1 < H and (y + 1 < 0 or not self.board[y + 1][x]) for x, y in self._cells()):
+        if not self.can_fall():
             return False
         self.piece["y"] += 1
         return True
+
+    # ---- 人間の操作
+    def move(self, dx):
+        if not self._free([(x + dx, y) for x, y in self._cells()]):
+            return False
+        self.piece["x"] += dx
+        return True
+
+    def rotate(self, d):
+        p = self.piece
+        rot = (p["rot"] + d) % 4
+        cx, cy = ROT[rot]
+        for kx, ky in ((0, 0), (-cx, 0), (0, -1), (-cx, -1)):  # 壁や床にぶつかるときは軸をずらす
+            x, y = p["x"] + kx, p["y"] + ky
+            if self._free([(x, y), (x + cx, y + cy)]):
+                p.update(rot=rot, x=x, y=y)
+                return True
+        return False
 
     def steer(self, cand):
         if cand["y"] < self.piece["y"]:

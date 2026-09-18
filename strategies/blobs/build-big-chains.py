@@ -1,13 +1,16 @@
 """Blobsの既定の戦略（連鎖を育ててから打つ版）。このファイルをコピーして、自分の戦略を作ってください。
 
 考え方: 探索と計算（連鎖のシミュレーション、あと何個で何連鎖が打てるか）はコード、良し悪しの評価は Jev。
-- Jev は評価基準を字義どおり正確に読む。「3連鎖以上＝最上位」と書けば、3連鎖ができた瞬間に打つ（baseline がそれ）。
+- Jev は評価基準を字義どおり正確に読む。「3連鎖以上＝最上位」と書けば、3連鎖ができた瞬間に打つ（pop-early がそれ）。
   ここでは「盤面に余裕があるうちの小〜中連鎖は無駄打ち」と低い段に明記し、5連鎖以上か、盤面が詰まってから打たせる
 - 数値の大小比較をモデルにさせない。攻撃の強さ・連鎖の伸び縮み・盤面の余裕は、コードが言葉の区分にして渡す
 - 「狙える連鎖数」は、同色ブロブをあと2個足すところまで見る（chain_potential の max_add=2）。1個だけだと育ちかけの連鎖を評価できない
 - 同点の候補は、コード（tie_break）が「攻撃が大きい → 狙える連鎖が長い → 3列目が低い」の順で選ぶ
 """
 from arena.games.blobs import COLOR_NAME, SPAWN_X, W, chain_potential, heights, touching_same_colour
+
+DESCRIPTION = "連鎖を育ててから打つ（推奨）"  # 画面の選択肢に出る一言
+RECOMMENDED = True  # 選択肢の先頭に出す
 
 QUESTION = "How good is this placement of the falling pair?"
 INSTRUCTIONS = "How good is the pair placement described in `candidates.{id}`?"

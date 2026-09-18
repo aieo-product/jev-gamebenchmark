@@ -7,6 +7,9 @@
 """
 from arena.games.blocks import bumpiness, count_holes, heights
 
+DESCRIPTION = "穴を避けつつ低く平らに積む（推奨）"  # 画面の選択肢に出る一言
+RECOMMENDED = True  # 選択肢の先頭に出す
+
 QUESTION = "How good is this piece placement?"
 INSTRUCTIONS = "How good is the piece placement described in `candidates.{id}`?"
 LEVELS = [

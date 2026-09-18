@@ -1,7 +1,7 @@
 """戦略の質だけを測る（対戦なし・時間制限なし・同じ並び）。戦略をいじったら、まずこれで確かめるのが速くて安い。
 
-  python -m arena.solo blobs                          # default 戦略の Jev を 80手 × seed 1001,2002
-  python -m arena.solo blobs -s default,baseline      # 戦略どうしを比べる
+  python -m arena.solo blobs                          # 推奨戦略の Jev を 80手 × seed 1001,2002
+  python -m arena.solo blobs -s build-big-chains,pop-early      # 戦略どうしを比べる
   python -m arena.solo blocks -a jev,code,random     # コードだけの評価関数・ランダムと比べる
   python -m arena.solo blobs -a jev,claude-api:claude-haiku-4-5,openai:gpt-5.6-luna   # LLM にも同じ戦略で打たせる
   python -m arena.solo blobs -a code -n 120 --seeds 1,2,3,4,5                        # API を使わない確認
@@ -17,7 +17,7 @@ from datetime import datetime
 
 from . import agents as A
 from .games import GAMES
-from .strategy import ROOT, Strategy
+from .strategy import ROOT, Strategy, default_strategy
 
 
 class _Local:
@@ -80,17 +80,18 @@ async def play(gmod, spec, strategy, moves, seed):
 async def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("game", choices=list(GAMES))
-    ap.add_argument("-s", "--strategies", default="default", help="戦略名をカンマ区切りで（strategies/<game>/<名前>.py）")
+    ap.add_argument("-s", "--strategies", default="", help="戦略名をカンマ区切りで（strategies/<game>/<名前>.py）")
     ap.add_argument("-a", "--agents", default="jev", help="jev / code / random / claude-api:<model> / openai:<model> / claude-sdk:<model>")
     ap.add_argument("-n", "--moves", type=int, default=80)
     ap.add_argument("--seeds", default="1001,2002")
     ap.add_argument("-o", "--out", default="", help="結果の保存先（既定: bench/solo-<game>-<日時>.json。docs に載せるなら docs/results/solo-<game>-….json）")
     args = ap.parse_args()
     gmod, out = GAMES[args.game], []
-    for sname in args.strategies.split(","):
+    names = (args.strategies or default_strategy(args.game)).split(",")
+    for sname in names:
         strategy = Strategy(gmod, sname)
         for spec in args.agents.split(","):
-            if spec in ("random", "code") and sname != args.strategies.split(",")[0]:
+            if spec in ("random", "code") and sname != names[0]:
                 continue  # 戦略を使わないエージェントは1回でよい
             for seed in map(int, args.seeds.split(",")):
                 r = await play(gmod, spec, strategy, args.moves, seed)

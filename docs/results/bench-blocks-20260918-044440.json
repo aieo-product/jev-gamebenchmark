@@ -1,7 +1,7 @@
 {
  "game": "blocks",
  "date": "2026-09-18T04:44:40",
- "strategy": "default",
+ "strategy": "keep-flat",
  "seconds": 60,
  "thinking": "off",
  "gravity_ms": 800,

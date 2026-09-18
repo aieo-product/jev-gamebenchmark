@@ -141,6 +141,27 @@ class Game:
         p["y"] += 1
         return True
 
+    # ---- 人間の操作
+    def move(self, dx):
+        p = self.piece
+        if collides(self.board, SHAPES[p["type"]][p["rot"]], p["x"] + dx, p["y"]):
+            return False
+        p["x"] += dx
+        return True
+
+    def rotate(self, d):
+        p = self.piece
+        rot = (p["rot"] + d) % len(SHAPES[p["type"]])
+        for kick in (0, -1, 1, -2, 2):  # 壁ぎわは1〜2マスずらして入れる
+            if not collides(self.board, SHAPES[p["type"]][rot], p["x"] + kick, p["y"]):
+                p.update(rot=rot, x=p["x"] + kick)
+                return True
+        return False
+
+    def can_fall(self):
+        p = self.piece
+        return not collides(self.board, SHAPES[p["type"]][p["rot"]], p["x"], p["y"] + 1)
+
     def steer(self, cand):
         """回答の置き方へ移す。すでにその高さより下まで落ちていたら False（届いたが置けず）。"""
         if cand["y"] < self.piece["y"]:

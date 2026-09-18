@@ -5,7 +5,7 @@
  "results": [
   {
    "agent": "jev",
-   "strategy": "default",
+   "strategy": "build-big-chains",
    "seed": 1001,
    "pieces": 100,
    "score": 31650,
@@ -31,7 +31,7 @@
   },
   {
    "agent": "jev",
-   "strategy": "default",
+   "strategy": "build-big-chains",
    "seed": 2002,
    "pieces": 100,
    "score": 47300,
@@ -151,7 +151,7 @@
   },
   {
    "agent": "jev",
-   "strategy": "baseline",
+   "strategy": "pop-early",
    "seed": 1001,
    "pieces": 100,
    "score": 7060,
@@ -200,7 +200,7 @@
   },
   {
    "agent": "jev",
-   "strategy": "baseline",
+   "strategy": "pop-early",
    "seed": 2002,
    "pieces": 100,
    "score": 6750,

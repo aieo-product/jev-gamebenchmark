@@ -1,11 +1,13 @@
-"""Blocksの最適化「前」の戦略（開発初期の設定の再現）。default と対戦させて、問いの立て方でどれだけ変わるかを見るためのもの。
+"""Blocksの最適化「前」の戦略（開発初期の設定の再現）。keep-flat と対戦させて、問いの立て方でどれだけ変わるかを見るためのもの。
 
-default との違い:
+keep-flat との違い:
 - 評価基準が4段階で、「穴あり」を最低の段にまとめている（→ 穴を避けて高く積みがち）
 - 置く前と後の値をそのまま渡し、差分はモデルに読ませている
 - 同点は先頭の候補を採用（tie_break なし）
 """
 from arena.games.blocks import bumpiness, count_holes, heights
+
+DESCRIPTION = "最初に書いた基準。穴を避けて高く積みがち"  # 画面の選択肢に出る一言
 
 QUESTION = "How good is this piece placement for long-term survival?"
 INSTRUCTIONS = "How good is the piece placement described in `candidates.{id}` for long-term survival?"

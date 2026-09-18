@@ -2,6 +2,7 @@
 
 サーバーがゲームを進行し、ブラウザは描画とログ表示だけを行う。
   左 : Jev     … 戦略ファイルの問い（既定: 候補ごとに Score 1問）を1リクエストで送り、戦略の pick() で手を決める
+        または 人間 … ブラウザのキーボードで操作する（← → 移動、↑/X 回転、Z 逆回転、↓ 1段落とす、Space 一気に落とす）
   右 : LLM     … 同じ特徴量・同じ評価基準を渡し、{"pick": "pNN"} を返させる（Claude / GPT）。または別の戦略の Jev
 """
 import asyncio
@@ -19,7 +20,7 @@ from aiohttp import web
 
 from . import agents as A
 from .games import GAMES
-from .strategy import ROOT, Strategy, StrategyError, list_strategies
+from .strategy import ROOT, Strategy, StrategyError, default_strategy, list_strategies
 
 LOG_DIR = ROOT / "logs"
 PORT = int(os.environ.get("ARENA_PORT", "8770"))
@@ -39,10 +40,84 @@ class Stats:
     ms: list = field(default_factory=list)
 
 
+class HumanAgent:
+    """左側を人間が操作するときの置き物。手はブラウザから届くキーで決まる。"""
+    model = model_reported = "human"
+
+    def __init__(self):
+        self.keys = asyncio.Queue()
+
+    async def start(self, system=None):
+        pass
+
+    async def stop(self):
+        pass
+
+
+KEY_LABEL = {"left": "←", "right": "→", "cw": "↻", "ccw": "↺", "down": "↓", "drop": "⤓"}
+HUMAN_LOCK_GRACE = 0.5  # 着地してから固定されるまでの猶予（この間は動かせる）
+
+
 class Player:
     def __init__(self, side, agent, strategy, game, match):
         self.side, self.agent, self.strategy, self.game, self.match = side, agent, strategy, game, match
         self.thinking_since, self.stats, self._late = None, Stats(), None
+        self.human = isinstance(agent, HumanAgent)
+
+    async def run_human(self):
+        m, g = self.match, self.game
+        opp = m.players["llm"].game
+        loop, q = asyncio.get_running_loop(), self.agent.keys
+        while g.alive and not m.over:
+            if not g.spawn():
+                break
+            label, keys, t0 = g.label(), [], time.perf_counter()
+            n = self.stats.decisions = self.stats.decisions + 1
+            self.thinking_since = time.time() * 1000
+            while not q.empty():  # 前の手の余ったキーは捨てる
+                q.get_nowait()
+            next_fall, landed_at = loop.time() + m.gravity(), None
+            while not m.over:
+                deadline = next_fall if landed_at is None else min(next_fall, landed_at + HUMAN_LOCK_GRACE)
+                try:
+                    key = await asyncio.wait_for(q.get(), timeout=max(0.0, deadline - loop.time()))
+                except asyncio.TimeoutError:
+                    key = None
+                if key:
+                    keys.append(KEY_LABEL.get(key, "?"))
+                    if key == "left":
+                        g.move(-1)
+                    elif key == "right":
+                        g.move(1)
+                    elif key == "cw":
+                        g.rotate(1)
+                    elif key == "ccw":
+                        g.rotate(-1)
+                    elif key == "down":
+                        g.step_down()
+                        next_fall = loop.time() + m.gravity()
+                    elif key == "drop":
+                        while g.step_down():
+                            pass
+                        break
+                    if landed_at is not None and g.can_fall():
+                        landed_at = None
+                if landed_at is not None and loop.time() >= landed_at + HUMAN_LOCK_GRACE:
+                    break
+                if loop.time() >= next_fall:
+                    if not g.step_down() and landed_at is None:
+                        landed_at = loop.time()
+                    next_fall = loop.time() + m.gravity()
+            if m.over:
+                break
+            d = A.Decision(pick="human", ms=(time.perf_counter() - t0) * 1000, raw_output="".join(keys), summary=f"操作: {''.join(keys) or '（なし）'}")
+            self._account(d)
+            await m.log_decision(self, n, label, d, "applied", None)
+            self.thinking_since = None
+            for text in await g.lock(opp, asyncio.sleep, m.label(self.side)):
+                await m.event(text)
+            await asyncio.sleep(m.lock_delay)
+        self.thinking_since, g.piece = None, None
 
     def snapshot(self):
         s, ms, g = self.stats, self.stats.ms, self.game
@@ -59,6 +134,8 @@ class Player:
         }
 
     async def run(self):
+        if self.human:
+            return await self.run_human()
         m, g = self.match, self.game
         opp = m.players["llm" if self.side == "jev" else "jev"].game
         loop = asyncio.get_running_loop()
@@ -138,18 +215,19 @@ class Match:
         self.g0, self.duration = float(cfg.get("gravity_ms", 800)) / 1000, float(cfg.get("duration_s", 180))
         self.lock_delay, self.over, self.t0, self.stopped = 0.12, False, None, False
         self.provider = cfg.get("provider", "claude-api")
-        left = Strategy(self.gmod, cfg.get("strategy") or "default")
+        self.left = "human" if cfg.get("left") == "human" else "jev"
+        left = Strategy(self.gmod, cfg.get("strategy") or default_strategy(self.gmod.ID))
         # 右側は、LLM なら左と同じ戦略（同じ特徴量・同じ基準で比べる）。Jev どうしなら別の戦略を指定できる
         right = Strategy(self.gmod, cfg.get("strategy_right") or left.name) if self.provider == "jev" else left
         seq = self.gmod.Sequence(self.seed)
-        agents = {"jev": A.JevAgent(), "llm": A.PROVIDERS[self.provider]["cls"](cfg["model"], cfg.get("thinking", "off"))}
+        agents = {"jev": HumanAgent() if self.left == "human" else A.JevAgent(), "llm": A.PROVIDERS[self.provider]["cls"](cfg["model"], cfg.get("thinking", "off"))}
         self.players = {k: Player(k, agents[k], s, self.gmod.Game(seq, self.seed + i + 1, cfg), self) for i, (k, s) in enumerate((("jev", left), ("llm", right)))}
         LOG_DIR.mkdir(exist_ok=True)
         self.log_path = LOG_DIR / f"{self.gmod.ID}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.jsonl"
         self.log_file = self.log_path.open("w", encoding="utf-8")
 
     def label(self, side):
-        return "JEV" if side == "jev" else A.PROVIDERS[self.provider]["label"]
+        return ("YOU" if self.left == "human" else "JEV") if side == "jev" else A.PROVIDERS[self.provider]["label"]
 
     def gravity(self):
         """1段落ちるまでの秒数。20秒ごとに 15% 速くなる（下限 60ms）。"""
@@ -181,7 +259,7 @@ class Match:
             t = time.perf_counter()
             await asyncio.gather(*(p.agent.start(p.strategy.llm_system()) for p in P.values()))
             await self.hub.send({"t": "phase", "phase": "ready", "text": f"準備完了（{time.perf_counter() - t:.1f}秒）。3秒後に開始"})
-            self.write({"type": "start", "game": self.gmod.ID, "config": self.cfg, "seed": self.seed, "llm_model": P["llm"].agent.model, "llm_provider": self.provider,
+            self.write({"type": "start", "game": self.gmod.ID, "left": self.left, "config": self.cfg, "seed": self.seed, "llm_model": P["llm"].agent.model, "llm_provider": self.provider,
                         "strategy": {k: p.strategy.describe() for k, p in P.items()}, "llm_system_prompt": P["llm"].strategy.llm_system(),
                         "pricing": {"jev_usd_per_mtok": {"input": 0.042, "output": 0.0}, "llm_list_usd_per_mtok": A.llm_list_price(P["llm"].agent.model),
                                     "note": "API 直結は定価×使用トークン（実請求）。claude-sdk はサブスク認証で実請求なし、SDK が返す API 換算額"}})
@@ -228,7 +306,7 @@ class Match:
 
     def state(self):
         P = self.players
-        return {"t": "state", "game": self.gmod.ID, "elapsed": self.elapsed(), "duration": self.duration, "gravity_ms": round(self.gravity() * 1000),
+        return {"t": "state", "game": self.gmod.ID, "left": self.left, "elapsed": self.elapsed(), "duration": self.duration, "gravity_ms": round(self.gravity() * 1000),
                 "llm_model": P["llm"].agent.model, "llm_provider": self.provider, "llm_label": A.PROVIDERS[self.provider]["label"], "jev_model": P["jev"].agent.model_reported,
                 "strategy": {k: p.strategy.name for k, p in P.items()}, "players": {k: p.snapshot() for k, p in P.items()}}
 
@@ -241,7 +319,7 @@ class Match:
         else:
             winner = "jev" if j.rank() > c.rank() else "llm" if c.rank() > j.rank() else "draw"
             reason = f"時間切れ。{j.RANK_TEXT}で判定" if j.alive else "両者同時に終了"
-        summary = {"type": "end", "game": self.gmod.ID, "winner": winner, "llm_label": A.PROVIDERS[self.provider]["label"], "llm_model": self.players["llm"].agent.model,
+        summary = {"type": "end", "game": self.gmod.ID, "left": self.left, "winner": winner, "llm_label": A.PROVIDERS[self.provider]["label"], "llm_model": self.players["llm"].agent.model,
                    "reason": reason, "stopped": reason.startswith("途中で停止"), "elapsed": self.elapsed(), "seed": self.seed, "strategy": {k: p.strategy.name for k, p in self.players.items()},
                    "players": {k: p.snapshot()["stats"] for k, p in self.players.items()}, "log": str(self.log_path.relative_to(ROOT))}
         self.write(summary)
@@ -309,6 +387,10 @@ async def ws_handler(request):
                 await hub.start(cmd)
             elif cmd.get("cmd") == "stop":
                 await hub.stop()
+            elif cmd.get("cmd") == "key":  # 人間が操作する左側へのキー入力
+                m = hub.match
+                if m and not m.over and m.left == "human" and cmd.get("key") in KEY_LABEL:
+                    m.players["jev"].agent.keys.put_nowait(cmd["key"])
             elif cmd.get("cmd") == "hello":  # 戦略ファイルの一覧を取り直す
                 await ws.send_str(json.dumps(hello(), ensure_ascii=False))
     finally:

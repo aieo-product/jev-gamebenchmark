@@ -60,6 +60,8 @@ canvas.spark { width: 100%; height: 44px; display: block; }
 .next canvas { width: 22px; height: 44px; }
 body[data-game="blocks"] .next canvas { width: 40px; height: 28px; }
 .strat { color: var(--tone); }
+.keys { font-family: var(--mono); font-size: .74rem; color: var(--ink); background: var(--panel-2); border-radius: 6px; padding: 6px 10px; line-height: 1.7; }
+.keys kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--bg); }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
 .stat { padding: 7px 10px; display: grid; gap: 1px; box-shadow: 0 0 0 .5px var(--line); }
 .stat small { font-size: .66rem; color: var(--dim); }
@@ -85,10 +87,11 @@ pre { margin: 0; font-family: var(--mono); font-size: .72rem; line-height: 1.5; 
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span id="brand-game">BLOBS</span> ARENA — <b>JEV</b> vs <b id="brand-llm">CLAUDE</b></div>
+  <div class="brand"><span id="brand-game">BLOBS</span> ARENA — <b id="brand-left">JEV</b> vs <b id="brand-llm">CLAUDE</b></div>
   <div class="controls">
     <label for="game">ゲーム<select id="game"></select></label>
-    <label for="strategy">戦略（左の Jev）<select id="strategy"></select></label>
+    <label for="left">左側<select id="left"><option value="jev">Jev</option><option value="human">人間（キーボード）</option></select></label>
+    <label for="strategy" id="s-label">戦略（左の Jev）<select id="strategy"></select></label>
     <label for="strategy_right" id="sr-wrap" hidden>戦略（右の Jev）<select id="strategy_right"></select></label>
     <label for="provider">対戦相手<select id="provider"></select></label>
     <label for="model">モデル<select id="model"></select></label>
@@ -134,6 +137,8 @@ const TCOLORS = { I: "#4fd6e8", O: "#f2d24b", T: "#b07cf0", S: "#6fd672", Z: "#f
 const TSHAPES = { I: [[0,0],[1,0],[2,0],[3,0]], O: [[0,0],[1,0],[0,1],[1,1]], T: [[0,0],[1,0],[2,0],[1,1]], S: [[1,0],[2,0],[0,1],[1,1]], Z: [[0,0],[1,0],[1,1],[2,1]], L: [[0,0],[0,1],[0,2],[1,2]], J: [[1,0],[1,1],[1,2],[0,2]] };
 const BW = 6, BH = 13;
 const SIDES = { jev: { title: "JEV", how: "戦略ファイルの問い（既定: 候補ごとに Score 1問）を1リクエストで送り、最高点を採用" }, llm: { title: "CLAUDE", how: "同じ特徴量・同じ評価基準を渡し {\"pick\":\"pNN\"} を返させる" } };
+const HUMAN_HOW = "あなたがキーボードで操作します。回答時間の欄は、ピースが出てから固定するまでの時間です";
+const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "cw", x: "cw", X: "cw", z: "ccw", Z: "ccw", ArrowDown: "down", " ": "drop" };
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 const usd = (v) => (v == null ? "—" : "$" + (v >= 0.01 ? v.toFixed(4) : v >= 0.0001 ? v.toFixed(5) : v.toFixed(7)));
@@ -151,6 +156,7 @@ for (const side of Object.keys(SIDES)) {
           <div class="row"><span>平均 <b id="${side}-avg">—</b></span><span>中央値 <b id="${side}-p50">—</b></span><span>最大 <b id="${side}-max">—</b></span></div></div>
         <canvas class="spark" id="${side}-spark" width="300" height="44" aria-label="回答時間の推移"></canvas>
         <div class="next">NEXT <canvas id="${side}-n0" width="44" height="88"></canvas><canvas id="${side}-n1" width="44" height="88"></canvas><canvas id="${side}-n2" width="44" height="88"></canvas></div>
+        <div class="keys" id="${side}-keys" hidden><kbd>←</kbd><kbd>→</kbd> 移動　<kbd>↑</kbd>/<kbd>X</kbd> 回転　<kbd>Z</kbd> 逆回転　<kbd>↓</kbd> 1段落とす　<kbd>Space</kbd> 一気に落とす</div>
         <div class="logwrap"><h3>回答ログ — どんな出力で操作したか（常時）</h3><div class="log" id="${side}-log" tabindex="0"></div></div>
       </div>
     </div>
@@ -250,7 +256,7 @@ function drawSpark(side, hist) {
 }
 
 function renderState(st) {
-  latest = st; setGame(st.game); const R = RENDER[st.game];
+  latest = st; setGame(st.game); const R = RENDER[st.game]; setLeft(st.left);
   $("llm-how").textContent = st.llm_provider === "jev" ? SIDES.jev.how : SIDES.llm.how;
   $("jev-strat").textContent = "戦略: " + st.strategy.jev; $("llm-strat").textContent = "戦略: " + st.strategy.llm;
   $("elapsed").textContent = st.elapsed.toFixed(1); $("dur").textContent = st.duration; $("grav").textContent = st.gravity_ms;
@@ -276,11 +282,19 @@ function renderState(st) {
     $("side-" + side).classList.toggle("lost", !p.alive);
   }
 }
+let leftKind = "jev";
+function setLeft(kind) {
+  if (kind === leftKind) return;
+  leftKind = kind;
+  const human = kind === "human";
+  $("jev-title").textContent = human ? "YOU" : "JEV"; $("brand-left").textContent = human ? "YOU" : "JEV";
+  $("jev-how").textContent = human ? HUMAN_HOW : SIDES.jev.how; $("jev-keys").hidden = !human; $("jev-model").hidden = human; $("jev-strat").hidden = human;
+}
 function tickMs() {
   if (latest) for (const side of Object.keys(SIDES)) {
-    const p = latest.players[side], box = $(side + "-msbox"), thinking = p.thinking_since != null && p.alive;
+    const p = latest.players[side], box = $(side + "-msbox"), thinking = p.thinking_since != null && p.alive, human = side === "jev" && leftKind === "human";
     box.classList.toggle("thinking", thinking);
-    $(side + "-mslabel").textContent = thinking ? "回答待ち…（経過時間）" : "直近の回答時間";
+    $(side + "-mslabel").textContent = thinking ? (human ? "操作中…（経過時間）" : "回答待ち…（経過時間）") : (human ? "直近の1手にかかった時間" : "直近の回答時間");
     $(side + "-ms").textContent = thinking ? fmt(Math.max(0, Math.round(Date.now() - p.thinking_since))) : fmt(p.stats.ms_last);
   }
   requestAnimationFrame(tickMs);
@@ -294,7 +308,7 @@ function addDecision(d) {
   const ln = document.createElement("div");
   ln.className = "ln" + (d.outcome !== "applied" || d.error ? " bad" : ""); ln.dataset.key = key;
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  ln.innerHTML = `<span class="n">#${String(d.n).padStart(3, "0")} ${d.piece} ${d.at.toFixed(1)}s</span>  <span class="ms2">${Math.round(d.ms)}ms</span>  <span class="tok">in ${fmt(d.tok_in)} / out ${fmt(d.tok_out)} / ${usd(d.cost_usd)}</span>\n<span class="out">${esc(d.summary || d.error || "")}</span>${d.pick ? ` → <b>${d.pick}</b>` : ""}${OUTCOME[d.outcome] || ""}${d.error ? " ｜" + esc(d.error) : ""}`;
+  ln.innerHTML = `<span class="n">#${String(d.n).padStart(3, "0")} ${d.piece} ${d.at.toFixed(1)}s</span>  <span class="ms2">${Math.round(d.ms)}ms</span>  <span class="tok">in ${fmt(d.tok_in)} / out ${fmt(d.tok_out)} / ${usd(d.cost_usd)}</span>\n<span class="out">${esc(d.summary || d.error || "")}</span>${d.pick && d.pick !== "human" ? ` → <b>${d.pick}</b>` : ""}${OUTCOME[d.outcome] || ""}${d.error ? " ｜" + esc(d.error) : ""}`;
   log.appendChild(ln);
   while (log.children.length > 400) { delete decisions[log.firstChild.dataset.key]; log.removeChild(log.firstChild); }
   if (atBottom) log.scrollTop = log.scrollHeight;
@@ -312,7 +326,7 @@ function addEvent(text, at) {
 let providers = {}, games = {};
 function fillStrategies() {
   const g = games[$("game").value]; if (!g) return;
-  for (const id of ["strategy", "strategy_right"]) { const keep = $(id).value; $(id).innerHTML = g.strategies.map((x) => `<option value="${x}">${x}</option>`).join(""); if (g.strategies.includes(keep)) $(id).value = keep; }
+  for (const id of ["strategy", "strategy_right"]) { const keep = $(id).value; $(id).innerHTML = g.strategies.map((x) => `<option value="${x.name}">${x.name}${x.description ? " — " + x.description : ""}</option>`).join(""); if (g.strategies.some((x) => x.name === keep)) $(id).value = keep; }
   if (!latest || latest.game !== $("game").value || !busy) setGame($("game").value);
 }
 let busy = false;
@@ -328,6 +342,11 @@ function fillModels() {
 }
 $("provider").onchange = fillModels;
 $("game").onchange = fillStrategies;
+$("left").onchange = () => { $("s-label").firstChild.textContent = $("left").value === "human" ? "戦略（相手の LLM 用）" : "戦略（左の Jev）"; };
+document.addEventListener("keydown", (e) => {   // 人間モードのキー操作。入力欄にフォーカスがあるときは何もしない
+  if (!busy || leftKind !== "human" || /^(SELECT|INPUT|TEXTAREA)$/.test(document.activeElement?.tagName) || !(e.key in KEYMAP)) return;
+  e.preventDefault(); ws.send(JSON.stringify({ cmd: "key", key: KEYMAP[e.key] }));
+});
 $("strategy").onfocus = $("strategy_right").onfocus = () => ws.send(JSON.stringify({ cmd: "hello" }));   // 戦略ファイルを足したら一覧に出るように
 let ws;
 function connect() {
@@ -347,10 +366,10 @@ function connect() {
     } else if (m.t === "state") renderState(m);
     else if (m.t === "decision") addDecision(m);
     else if (m.t === "event") addEvent(m.text, m.at);
-    else if (m.t === "phase") { $("phase").textContent = m.text; busy = ["connecting", "ready", "playing"].includes(m.phase); $("start").disabled = busy; $("stop").disabled = !busy; }
+    else if (m.t === "phase") { $("phase").textContent = m.text; if (m.phase === "playing" && $("left").value === "human") { document.activeElement?.blur(); $("phase").textContent = "対戦中 — キーボードで操作（画面のどこかをクリックしてから）"; } busy = ["connecting", "ready", "playing"].includes(m.phase); $("start").disabled = busy; $("stop").disabled = !busy; }
     else if (m.t === "end") {
       busy = false; $("phase").textContent = "試合終了"; $("start").disabled = false; $("stop").disabled = true;
-      const name = { jev: "JEV", llm: `${m.llm_label}（${m.llm_model}）`, draw: "引き分け" }[m.winner];
+      const name = { jev: m.left === "human" ? "あなた" : "JEV", llm: `${m.llm_label}（${m.llm_model}）`, draw: "引き分け" }[m.winner];
       $("result").innerHTML = `勝者: <b style="color:var(--${m.winner === "draw" ? "ink" : m.winner})">${name}</b> — ${m.reason}<br><span class="note">ログ: ${m.log}（seed ${m.seed}）</span>`;
       for (const side of Object.keys(SIDES)) { const b = $(side + "-badge"); b.hidden = m.winner === "draw"; b.className = "badge " + (m.winner === side ? "win" : "lose"); b.textContent = m.winner === side ? "WIN" : "LOSE"; }
     }
@@ -361,7 +380,7 @@ $("start").onclick = () => {
   $("ratev").textContent = $("rate").value;
   for (const side of Object.keys(SIDES)) { $(side + "-log").innerHTML = ""; $(side + "-badge").hidden = true; }
   $("events").innerHTML = ""; $("result").innerHTML = ""; $("inspect").textContent = "ログの行をクリックすると、そのときのリクエストとレスポンスの全文を表示します。";
-  ws.send(JSON.stringify({ cmd: "start", game: $("game").value, strategy: $("strategy").value, strategy_right: $("strategy_right").value, provider: $("provider").value, model: $("model").value, thinking: $("thinking").value, gravity_ms: Number($("gravity").value), garbage_rate: Number($("rate").value), duration_s: Number($("duration").value) }));
+  ws.send(JSON.stringify({ cmd: "start", game: $("game").value, left: $("left").value, strategy: $("strategy").value, strategy_right: $("strategy_right").value, provider: $("provider").value, model: $("model").value, thinking: $("thinking").value, gravity_ms: Number($("gravity").value), garbage_rate: Number($("rate").value), duration_s: Number($("duration").value) }));
 };
 $("stop").onclick = () => ws.send(JSON.stringify({ cmd: "stop" }));
 </script>

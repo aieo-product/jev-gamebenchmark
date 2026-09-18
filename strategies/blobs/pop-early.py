@@ -1,11 +1,13 @@
-"""Blobsの最適化「前」の戦略（最初に書いた版）。default と対戦させて、問いの立て方でどれだけ変わるかを見るためのもの。
+"""Blobsの最適化「前」の戦略（最初に書いた版）。build-big-chains と対戦させて、問いの立て方でどれだけ変わるかを見るためのもの。
 
-default との違い:
+build-big-chains との違い:
 - 「3連鎖以上」「1列ぶん以上のおじゃまを送る」を最上位に書いている → Jev は基準どおり、小さい連鎖をすぐ打つ
 - 「狙える連鎖数」は、ブロブをあと1個足す場合だけを見ている
 - 同点は「狙える連鎖数 → 3列目の高さ」で選ぶ
 """
 from arena.games.blobs import COLOR_NAME, SPAWN_X, W, chain_potential, find_groups, heights, touching_same_colour
+
+DESCRIPTION = "最初に書いた基準。小さい連鎖をすぐ打ってしまう"  # 画面の選択肢に出る一言
 
 QUESTION = "How good is this placement of the falling pair?"
 INSTRUCTIONS = "How good is the pair placement described in `candidates.{id}`?"

@@ -7,7 +7,7 @@
 
 ```
 ┌─ ゲームロジック（触らない）────────────┐      ┌─ 戦略（ここだけ書き換える）──────────┐
-│ arena/games/blobs.py  blocks.py        │      │ strategies/blobs/default.py          │
+│ arena/games/blobs.py  blocks.py        │      │ strategies/blobs/build-big-chains.py          │
 │  ・置ける場所の列挙                     │ 候補  │  ・モデルに見せる特徴量 features()    │
 │  ・結果のシミュレーション（連鎖・消去）   │ ───▶ │  ・評価基準の文言 LEVELS             │
 │  ・おじゃま／勝敗／リアルタイム進行      │      │  ・同点の扱い tie_break()            │
@@ -16,7 +16,7 @@
 └───────────────────────────────────────┘
 ```
 
-考えている間もピースは落ち続けます。**速く、かつ良い判断をした方が勝つ**ので、判断の質・速度・費用がまとめて画面に出ます。
+考えている間もピースは落ち続けます。**速く、かつ良い判断をした方が勝つ**ので、判断の質・速度・費用がまとめて画面に出ます。左側を「人間（キーボード）」にすれば、自分で Jev や LLM と対戦することもできます。
 
 ## 起動
 
@@ -35,14 +35,24 @@ export OPENAI_API_KEY=...          # 任意（GPT と対戦）
 
 ## 戦略を書き換える（3ステップ）
 
-1. コピーする: `cp strategies/blobs/default.py strategies/blobs/mine.py`
+1. コピーする: `cp strategies/blobs/build-big-chains.py strategies/blobs/mine.py`
 2. `mine.py` を編集する（下の表）。
 3. 試す。サーバーの再起動は不要です（試合を始めるたびに読み込み直します）。
-   - まず単独プレイで質を測る（速くて安い）: `python -m arena.solo blobs -s mine,default`
-   - 画面で対戦: ゲーム＝Blobs、対戦相手＝「Jev — 戦略どうしの対戦」、左＝`mine`、右＝`default`
+   - まず単独プレイで質を測る（速くて安い）: `python -m arena.solo blobs -s mine,build-big-chains`
+   - 画面で対戦: ゲーム＝Blobs、対戦相手＝「Jev — 戦略どうしの対戦」、左＝`mine`、右＝`build-big-chains`
+
+同梱の戦略（画面の選択肢には `DESCRIPTION` の一言が並びます）:
+
+| ゲーム | 戦略 | 内容 |
+|---|---|---|
+| Blobs | `build-big-chains`（推奨） | 連鎖を育ててから打つ。最大8連鎖 |
+| Blobs | `pop-early` | 最初に書いた基準。小さい連鎖をすぐ打ってしまう |
+| Blocks | `keep-flat`（推奨） | 穴を避けつつ低く平らに積む |
+| Blocks | `avoid-holes-first` | 最初に書いた基準。穴を避けて高く積みがち |
 
 | 戦略ファイルに書くもの | 役割 |
 |---|---|
+| `DESCRIPTION` / `RECOMMENDED` | 選択肢に出る一言。`RECOMMENDED = True` で先頭に出る（`arena.solo` や `arena.bench` で戦略を省略したときの既定にもなる） |
 | `LEVELS` | Score の評価基準（悪い→良い、2〜10段階）。**Jev は各段を別々に、字義どおりに読みます** |
 | `features(cand, view)` | 候補1つぶんの、モデルに見せる特徴量（dict）。`cand` にはシミュレーション結果（置く前後の盤面、連鎖の各段など）が入っています |
 | `context(view)` | 全候補に共通の状況（いまのピース、予告おじゃま、相手の高さ など） |
@@ -54,15 +64,15 @@ export OPENAI_API_KEY=...          # 任意（GPT と対戦）
 
 ### 最適化でどれだけ変わるか（同梱の2つの戦略）
 
-Blobs・Jev 単独 100手（`python -m arena.solo blobs -s default,baseline -a jev,code`、2026-09-18）:
+Blobs・Jev 単独 100手（`python -m arena.solo blobs -s build-big-chains,pop-early -a jev,code`、2026-09-18）:
 
 | 戦略 | 最大連鎖 | 作れたおじゃま（seed 1001 / 2002） |
 |---|---|---|
-| `baseline`（最初に書いた基準） | 3 | 100個 / 96個 |
-| `default`（書き直した基準） | **8** | **452個 / 675個** |
+| `pop-early`（最初に書いた基準。小さい連鎖をすぐ打つ） | 3 | 100個 / 96個 |
+| `build-big-chains`（書き直した基準。育ててから打つ） | **8** | **452個 / 675個** |
 | 参考: コードだけの評価関数（`-a code`） | 7 | 541個 / 715個 |
 
-モデルは同じで、変えたのは戦略ファイルだけです。`baseline` は「3連鎖以上＝最上位」と書いていたので、Jev は基準どおり小さい連鎖をすぐ打っていました。効いた変更は次の3つ:
+モデルは同じで、変えたのは戦略ファイルだけです。`pop-early` は「3連鎖以上＝最上位」と書いていたので、Jev は基準どおり小さい連鎖をすぐ打っていました。効いた変更は次の3つ:
 
 - 「盤面に余裕があるうちの発火は無駄打ち」と低い段に明記した
 - 条件の掛け合わせ（連鎖数 × 盤面の余裕 × 予告おじゃま）を、コードが `pop_timing` という1つの言葉にまとめて渡した（モデルに AND 条件を解かせない）
@@ -88,6 +98,10 @@ Blobs・Jev 単独 100手（`python -m arena.solo blobs -s default,baseline -a j
 
 対戦相手は4通り: Claude（API 直結）／GPT（OpenAI API 直結）／Jev（戦略どうし）／Claude（Agent SDK、サブスク認証）。速度の比較は API 直結が本筋です。
 
+### 自分で対戦する
+
+「左側」を **人間（キーボード）** にして対戦開始。<kbd>←</kbd><kbd>→</kbd> 移動、<kbd>↑</kbd>/<kbd>X</kbd> 回転、<kbd>Z</kbd> 逆回転、<kbd>↓</kbd> 1段落とす、<kbd>Space</kbd> 一気に落とす。着地後 0.5秒は動かせます。回答ログには押したキーが、回答時間の欄には「ピースが出てから固定するまでの時間」が出るので、自分の手の速さをモデルと比べられます。相手の LLM に渡す戦略は「戦略」で選びます。
+
 ## ルールと公平性
 
 - **共通**: 両者同じピースの並び。落下は 20秒ごとに 15% 速くなる。回答が届いた瞬間にその置き方へ移して落とす（横移動・回転は瞬間移動）。着地までに間に合わなければ出現位置のまま固定。回答時間はサーバー側で計った実時間（ネットワーク往復込み）。試合前に両者ウォームアップ済み。
@@ -99,7 +113,7 @@ Blobs・Jev 単独 100手（`python -m arena.solo blobs -s default,baseline -a j
 
 ```bash
 python -m arena                     # サーバー（run.sh と同じ）
-python -m arena.solo blobs -s mine,default -a jev -n 100      # 単独プレイで戦略の質を測る（-a code / random は API 不要）
+python -m arena.solo blobs -s mine,build-big-chains -a jev -n 100      # 単独プレイで戦略の質を測る（-a code / random は API 不要）
 python -m arena.headless blobs claude-api claude-haiku-4-5 --seconds 60   # ブラウザなしで1試合（サーバー起動中に）
 python -m arena.bench blobs          # 全モデルと順番に対戦して docs/results/ に保存（サーバー起動中に。LLM の費用がかかる）
 python -m arena.report               # docs/results/*.json → docs/benchmarks.md
@@ -125,8 +139,8 @@ static/index.html  画面（描画とログ表示だけ）
 ```bash
 export TYPESAFE_API_KEY=...   # required; ANTHROPIC_API_KEY / OPENAI_API_KEY optional
 ./run.sh                      # → http://localhost:8770
-cp strategies/blobs/default.py strategies/blobs/mine.py     # edit LEVELS / features() / tie_break()
-python -m arena.solo blobs -s mine,default                 # measure quality cheaply, no opponent
+cp strategies/blobs/build-big-chains.py strategies/blobs/mine.py     # edit LEVELS / features() / tie_break()
+python -m arena.solo blobs -s mine,build-big-chains                 # measure quality cheaply, no opponent
 ```
 
 Code enumerates and simulates every legal placement; your strategy file decides which facts the model sees, how the Score rubric is worded, and how ties are broken. Jev scores every candidate in one request; the LLM receives the same facts and rubric and must answer `{"pick": "pNN"}`. Pieces keep falling while a model thinks, so latency matters as much as judgment. Strategies are reloaded at every match start.

@@ -5,7 +5,7 @@
  "results": [
   {
    "agent": "jev",
-   "strategy": "default",
+   "strategy": "keep-flat",
    "seed": 1001,
    "pieces": 100,
    "lines": 37,
@@ -19,7 +19,7 @@
   },
   {
    "agent": "jev",
-   "strategy": "default",
+   "strategy": "keep-flat",
    "seed": 2002,
    "pieces": 100,
    "lines": 38,
@@ -89,7 +89,7 @@
   },
   {
    "agent": "jev",
-   "strategy": "baseline",
+   "strategy": "avoid-holes-first",
    "seed": 1001,
    "pieces": 100,
    "lines": 38,
@@ -103,7 +103,7 @@
   },
   {
    "agent": "jev",
-   "strategy": "baseline",
+   "strategy": "avoid-holes-first",
    "seed": 2002,
    "pieces": 100,
    "lines": 33,
