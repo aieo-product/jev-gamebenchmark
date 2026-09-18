@@ -442,9 +442,9 @@ class CodexAppServerAgent:
 
 
 PROVIDERS = {
+    "jev": {"label": "JEV 2", "name": "Jev — 戦略どうしの対戦", "cls": JevAgent, "models": ["jev-latest"], "available": lambda: bool(JEV_KEY), "need": "TYPESAFE_API_KEY"},
     "claude-api": {"label": "CLAUDE", "name": "Claude — API 直結", "cls": ClaudeApiAgent, "models": CLAUDE_MODELS, "available": lambda: bool(ANTHROPIC_KEY and anthropic), "need": "ANTHROPIC_API_KEY"},
     "openai": {"label": "GPT", "name": "GPT — OpenAI API 直結", "cls": OpenAIAgent, "models": OPENAI_MODELS, "available": lambda: bool(OPENAI_KEY and openai), "need": "OPENAI_API_KEY"},
-    "jev": {"label": "JEV 2", "name": "Jev — 戦略どうしの対戦", "cls": JevAgent, "models": ["jev-latest"], "available": lambda: bool(JEV_KEY), "need": "TYPESAFE_API_KEY"},
     "claude-sdk": {"label": "CLAUDE", "name": "Claude — Agent SDK（Claude Code のログイン）", "cls": ClaudeSdkAgent, "models": CLAUDE_MODELS, "available": lambda: ClaudeSDKClient is not None, "need": "pip install claude-agent-sdk", "subscription": True},
     "codex-app": {"label": "GPT", "name": "GPT — Codex app-server（ChatGPT のログイン）", "cls": CodexAppServerAgent, "models": CODEX_MODELS, "available": lambda: bool(CODEX_BIN), "need": "codex CLI", "subscription": True},
 }

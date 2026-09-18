@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 from datetime import datetime
 
 import aiohttp
@@ -60,6 +61,8 @@ async def main():
                         break
                     print(f"{model:<20} seed {seed}: 途中で停止されたので、やり直します", flush=True)
                     await asyncio.sleep(2)
+                if r.get("error"):  # 公開する結果に request_id などが混ざらないよう、エラー文は短くする
+                    r["error"] = re.sub(r"[,\s]*'?request_id'?:?\s*'?req_[0-9A-Za-z]+'?", "", r["error"])[:160]
                 out["matches"].append({"provider": provider, "model": model, "seed": seed, **{k: r.get(k) for k in ("winner", "reason", "stopped", "elapsed", "players", "error")}})
                 if r.get("error"):
                     print(f"{model:<20} seed {seed}: ERROR {r['error']}", flush=True)

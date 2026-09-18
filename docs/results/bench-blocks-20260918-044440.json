@@ -386,7 +386,7 @@
    "reason": null,
    "elapsed": null,
    "players": null,
-   "error": "エラー: BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'You have reached your specified API usage limits. You will regain access on 2026-10-01 at 00:00 UTC.'}, 'request_id': 'req_011Cf9bTqYbM8X3Kx5sMuM47'}"
+   "error": "エラー: BadRequestError: API の利用上限に達した（Error code: 400, usage limits）"
   },
   {
    "provider": "openai",
